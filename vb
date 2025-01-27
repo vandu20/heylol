@@ -1,32 +1,15 @@
-package com.example.dbcruise.service;
+package com.example.dbcruise.config;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 
-@Service
-public class DbCruiseService {
-    private final RestTemplate restTemplate;
+@ControllerAdvice
+public class GlobalExceptionHandler {
 
-    @Value("${dbcruise.service.url}")
-    private String serviceUrl;
-
-    public DbCruiseService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
-    }
-
-    public String getSnapshot() {
-        try {
-            // Fetching the response from the API as a String
-            return restTemplate.getForObject(serviceUrl, String.class);
-        } catch (HttpClientErrorException | HttpServerErrorException e) {
-            // Handling HTTP exceptions with specific status codes
-            return "HTTP Error: " + e.getStatusCode() + " - " + e.getResponseBodyAsString();
-        } catch (Exception e) {
-            // Handling all other exceptions
-            return "Error occurred: " + e.getMessage();
-        }
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<String> handleException(Exception ex) {
+        return new ResponseEntity<>("An unexpected error occurred: " + ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
