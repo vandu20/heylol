@@ -1,15 +1,32 @@
-package com.example.dbcruise.config;
+package com.example.dbcruise.service;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ControllerAdvice;
-import org.springframework.web.bind.annotation.ExceptionHandler;
+import com.example.dbcruise.dto.PostResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import java.util.Arrays;
+import java.util.List;
 
-@ControllerAdvice
-public class GlobalExceptionHandler {
+@Service
+public class DbCruiseService {
+    private final RestTemplate restTemplate;
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<String> handleException(Exception ex) {
-        return new ResponseEntity<>("An unexpected error occurred: " + ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+    @Value("${dbcruise.service.url}")
+    private String serviceUrl;
+
+    public DbCruiseService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
+
+    public List<PostResponse> getFilteredPosts() {
+        try {
+            // Fetching the response and mapping it to PostResponse[]
+            PostResponse[] response = restTemplate.getForObject(serviceUrl, PostResponse[].class);
+
+            // Returning as a list
+            return Arrays.asList(response);
+        } catch (Exception e) {
+            throw new RuntimeException("Error fetching posts: " + e.getMessage(), e);
+        }
     }
 }
