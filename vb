@@ -1,32 +1,41 @@
-package com.example.dbcruise.service;
+package com.example.dbcruise.dto;
 
-import com.example.dbcruise.dto.PostResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import java.util.Arrays;
-import java.util.List;
+public class PostResponse {
+    private int userId;
+    private int id;
+    private String title;
 
-@Service
-public class DbCruiseService {
-    private final RestTemplate restTemplate;
-
-    @Value("${dbcruise.service.url}")
-    private String serviceUrl;
-
-    public DbCruiseService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    // Getters and setters
+    public int getUserId() {
+        return userId;
     }
 
-    public List<PostResponse> getFilteredPosts() {
-        try {
-            // Fetching the response and mapping it to PostResponse[]
-            PostResponse[] response = restTemplate.getForObject(serviceUrl, PostResponse[].class);
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
 
-            // Returning as a list
-            return Arrays.asList(response);
-        } catch (Exception e) {
-            throw new RuntimeException("Error fetching posts: " + e.getMessage(), e);
-        }
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    @Override
+    public String toString() {
+        return "PostResponse{" +
+                "userId=" + userId +
+                ", id=" + id +
+                ", title='" + title + '\'' +
+                '}';
     }
 }
