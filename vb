@@ -1,21 +1,19 @@
-package com.example.dbcruise.service;
+package com.example.dbcruise.controller;
 
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.beans.factory.annotation.Value;
+import com.example.dbcruise.service.DbCruiseService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-@Service
-public class DbCruiseService {
-    private final RestTemplate restTemplate;
+@RestController
+public class DbCruiseController {
+    private final DbCruiseService dbCruiseService;
 
-    @Value("${dbcruise.service.url}")
-    private String serviceUrl;
-
-    public DbCruiseService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    public DbCruiseController(DbCruiseService dbCruiseService) {
+        this.dbCruiseService = dbCruiseService;
     }
 
+    @GetMapping("/snapshot")
     public String getSnapshot() {
-        return restTemplate.getForObject(serviceUrl, String.class);
+        return dbCruiseService.getSnapshot();
     }
 }
