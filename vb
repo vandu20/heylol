@@ -1,22 +1,50 @@
-package com.example.dbcruise.controller;
+package com.example.dbcruise.dto;
 
-import com.example.dbcruise.dto.PostResponse;
-import com.example.dbcruise.service.DbCruiseService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+public class PostResponse {
+    private int userId;
+    private int id;
+    private String title;
+    private String body; // Add the 'body' field to match the JSON response
 
-import java.util.List;
-
-@RestController
-public class DbCruiseController {
-    private final DbCruiseService dbCruiseService;
-
-    public DbCruiseController(DbCruiseService dbCruiseService) {
-        this.dbCruiseService = dbCruiseService;
+    // Getters and setters
+    public int getUserId() {
+        return userId;
     }
 
-    @GetMapping("/snapshot")
-    public List<PostResponse> getFilteredPosts() {
-        return dbCruiseService.getFilteredPosts();
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getBody() {
+        return body;
+    }
+
+    public void setBody(String body) {
+        this.body = body;
+    }
+
+    @Override
+    public String toString() {
+        return "PostResponse{" +
+                "userId=" + userId +
+                ", id=" + id +
+                ", title='" + title + '\'' +
+                '}';
     }
 }
