@@ -1,41 +1,22 @@
-package com.example.dbcruise.dto;
+package com.example.dbcruise.controller;
 
-public class PostResponse {
-    private int userId;
-    private int id;
-    private String title;
+import com.example.dbcruise.dto.PostResponse;
+import com.example.dbcruise.service.DbCruiseService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-    // Getters and setters
-    public int getUserId() {
-        return userId;
+import java.util.List;
+
+@RestController
+public class DbCruiseController {
+    private final DbCruiseService dbCruiseService;
+
+    public DbCruiseController(DbCruiseService dbCruiseService) {
+        this.dbCruiseService = dbCruiseService;
     }
 
-    public void setUserId(int userId) {
-        this.userId = userId;
-    }
-
-    public int getId() {
-        return id;
-    }
-
-    public void setId(int id) {
-        this.id = id;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    @Override
-    public String toString() {
-        return "PostResponse{" +
-                "userId=" + userId +
-                ", id=" + id +
-                ", title='" + title + '\'' +
-                '}';
+    @GetMapping("/snapshot")
+    public List<PostResponse> getFilteredPosts() {
+        return dbCruiseService.getFilteredPosts();
     }
 }
