@@ -1,50 +1,11 @@
 package com.example.dbcruise.dto;
 
+import lombok.Data;
+
+@Data // Lombok annotation to generate getters, setters, toString, equals, and hashCode
 public class PostResponse {
     private int userId;
     private int id;
     private String title;
-    private String body; // Add the 'body' field to match the JSON response
-
-    // Getters and setters
-    public int getUserId() {
-        return userId;
-    }
-
-    public void setUserId(int userId) {
-        this.userId = userId;
-    }
-
-    public int getId() {
-        return id;
-    }
-
-    public void setId(int id) {
-        this.id = id;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    public String getBody() {
-        return body;
-    }
-
-    public void setBody(String body) {
-        this.body = body;
-    }
-
-    @Override
-    public String toString() {
-        return "PostResponse{" +
-                "userId=" + userId +
-                ", id=" + id +
-                ", title='" + title + '\'' +
-                '}';
-    }
+    private String body; // Keep this field to match the JSON structure
 }
