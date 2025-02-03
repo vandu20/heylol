@@ -1,12 +1,1 @@
-<repositories>
-    <repository>
-        <id>oracle</id>
-        <url>https://maven.oracle.com</url>
-        <releases>
-            <enabled>true</enabled>
-        </releases>
-        <snapshots>
-            <enabled>false</enabled>
-        </snapshots>
-    </repository>
-</repositories>
+mvn install:install-file -Dfile=C:\oracle\product\19.3.0\client_1\jdbc\lib\ojdbc8.jar -DgroupId=com.oracle.database.jdbc -DartifactId=ojdbc8 -Dversion=19.3.0 -Dpackaging=jar
