@@ -1,178 +1,114 @@
-package com.db.fusion.rs.stax;
+package com.db.fusion.rs.extractor;
 
-import java.io.FileOutputStream;
-import java.io.OutputStream;
-import java.sql.*;
-import java.util.Date;
-import javax.xml.stream.XMLOutputFactory;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import javax.ejb.EJB;
+import javax.ejb.Stateful;
+import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-import com.db.fusion.rs.util.DateTimeHelper;  // Import the DateTimeHelper
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
-public class QuorumXMLGenerator {
+@Stateful
+public class RSReportGenerator {
 
-    // Database connection details
-    private static final String URL = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCPS)(HOST=frqrasu.de.da)))";
-    private static final String USER = "DCA_Y2ZN_USER";
-    private static final String PASSWORD = "DC_Tue291347599May";
+    private static final Logger LOGGER = LogManager.getLogger(RSReportGenerator.class);
+
+    private final String SEPARATOR = ",";
+    
+    @EJB
+    private RSDao rsDao;
+
+    private String restrictionType;
+    private String overrideRestrictionTypeName;
 
     // SQL Queries
-    private static final String SQL_RESTRICTION_TYPE =
-            "SELECT DISTINCT v.restriction_type_name FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? AND ROWNUM <= 1";
+    private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_TYPE_NAME +
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " v WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
+            " AND ROWNUM <= 1 AND " + ExtractorConstants.STATUS_CODE + " = ?";
 
-    private static final String SQL_TIMESTAMP =
-            "SELECT DISTINCT v.timestamp FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? AND ROWNUM <= 1";
+    private static final String SQL_RESTRICTIONS = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_ID +
+            ", v." + ExtractorConstants.SECURITY_NAME +
+            ", v." + ExtractorConstants.INSTRUMENT_ID_TYPE +
+            ", (CASE WHEN v." + ExtractorConstants.INSTRUMENT_ID_TYPE + " = ?" +
+            " THEN SUBSTR(v." + ExtractorConstants.INSTRUMENT_ID_VALUE + ", 1, " + ExtractorConstants.RIC_MAX_SIZE + ")" +
+            " ELSE v." + ExtractorConstants.INSTRUMENT_ID_VALUE + " END) AS " + ExtractorConstants.INSTRUMENT_ID_VALUE +
+            " FROM (SELECT * FROM (SELECT DISTINCT t." + ExtractorConstants.INSTRUMENT_ISIN + " AS " + ExtractorConstants.RESTRICTION_ID +
+            ", t." + ExtractorConstants.INSTRUMENT_ISIN + ", " + ExtractorConstants.INSTRUMENT_CUSIP +
+            ", t." + ExtractorConstants.INSTRUMENT_WKN + ", " + ExtractorConstants.INSTRUMENT_RIC +
+            ", t." + ExtractorConstants.SECURITY_NAME +
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " t" +
+            " WHERE t." + ExtractorConstants.STATUS_CODE + " = ?" +
+            " AND t." + ExtractorConstants.INSTRUMENT_ISIN + " IS NOT NULL" +
+            " AND t." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
+            ") UNPIVOT(" + ExtractorConstants.INSTRUMENT_ID_VALUE + " FOR " + ExtractorConstants.INSTRUMENT_ID_TYPE +
+            " IN (" + ExtractorConstants.INSTRUMENT_ISIN + " AS '" + ExtractorConstants.ISIN + "', " +
+            ExtractorConstants.INSTRUMENT_CUSIP + " AS '" + ExtractorConstants.CUSIP + "', " +
+            ExtractorConstants.INSTRUMENT_WKN + " AS '" + ExtractorConstants.WPK + "', " +
+            ExtractorConstants.INSTRUMENT_RIC + " AS '" + ExtractorConstants.RIC + "'))) v" +
+            " ORDER BY " + ExtractorConstants.RESTRICTION_ID;
 
-    private static final String SQL_RESTRICTIONS =
-            "SELECT DISTINCT v.restriction_id, v.instrument_name, v.instrument_id_type, "
-                    + "CASE WHEN v.instrument_id_type = ? THEN SUBSTR(v.instrument_id_value, 1, 14) ELSE v.instrument_id_value END AS instrument_id_value "
-                    + "FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? "
-                    + "ORDER BY v.restriction_id";
+    // Method to set restriction type
+    public void setRestrictionType(String restrictionType, String overrideRestrictionTypeName) {
+        this.restrictionType = restrictionType;
+        this.overrideRestrictionTypeName = overrideRestrictionTypeName;
+    }
 
-    public static void main(String[] args) {
-        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
-             OutputStream outputStream = new FileOutputStream("restricted_securities.xml")) {
+    // Method to generate XML report
+    public void generateReport(XMLStreamWriter xtw) throws Exception {
+        Validate.notNull(restrictionType, "Restriction type is not specified");
 
-            // Initialize XML writer
-            XMLOutputFactory factory = XMLOutputFactory.newInstance();
-            XMLStreamWriter xtw = factory.createXMLStreamWriter(outputStream, "UTF-8");
+        StaXBuilder staXBuilder = new StaXBuilder(xtw);
 
-            // Start XML document
-            xtw.writeStartDocument("UTF-8", "1.0");
-            xtw.writeStartElement("restrictedSecurityList");
-
-            // Write report details dynamically from database
-            writeReportDetails(connection, xtw);
-
-            // Write restriction type dynamically from database
-            fetchRestrictionType(connection, xtw);
-
-            // Write restrictions dynamically from database
-            fetchRestrictions(connection, xtw);
-
-            // Close the root element
-            xtw.writeEndElement();
-            xtw.writeEndDocument();
-            xtw.flush();
-            xtw.close();
-
-            System.out.println("XML file generated successfully!");
-
-        } catch (Exception e) {
-            e.printStackTrace();  // You can skip this, assuming no error
+        String defaultRestrictionType = ExtractorConstants.DEFAULT_RESTRICTION_TYPE;
+        if (overrideRestrictionTypeName != null) {
+            defaultRestrictionType = overrideRestrictionTypeName;
+        } else {
+            defaultRestrictionType = rsDao.getRestrictionType(restrictionType);  // Get the restriction type from the database
         }
-    }
 
-    // Method to dynamically write report details from the database
-    private static void writeReportDetails(Connection connection, XMLStreamWriter xtw) throws Exception {
-        // Fetch the restriction type from the database
-        String restrictionType = fetchRestrictionTypeFromDatabase(connection);
-        
-        // Fetch the timestamp from the database
-        Date timestamp = fetchTimestampFromDatabase(connection);  // Timestamp as Date object
+        Set<String> incorrectRICs = new HashSet<>();
+        List<RestrictedSecurity> restrictions = rsDao.getRestrictions(restrictionType, incorrectRICs); // Get list of restrictions from DB
 
-        // Format the timestamp dynamically
-        String formattedTimestamp = DateTimeHelper.formatDateTimeGmt(timestamp);  // Format using DateTimeHelper
+        // Create report details
+        staXBuilder.startElement(ExtractorConstants.REPORT_DETAILS)
+                .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, defaultRestrictionType)
+                .addElement(ExtractorConstants.EXTRACT_TIMESTAMP, DateTimeHelper.formatCalendarGmt(DateTimeHelper.getGMTCalendar()))
+                .addElement(ExtractorConstants.EXTRACT_STATUS, "Success");
 
-        // Fetching status dynamically (hardcoded as 'Success' here, it can also be fetched dynamically)
-        String status = "Success";  // Can also be fetched dynamically if available
-
-        xtw.writeStartElement("reportDetails");
-
-        xtw.writeStartElement("typeOfRestriction");
-        xtw.writeCharacters(restrictionType);
-        xtw.writeEndElement();
-
-        xtw.writeStartElement("extractTimestamp");
-        xtw.writeCharacters(formattedTimestamp);  // Write formatted timestamp
-        xtw.writeEndElement();
-
-        xtw.writeStartElement("extractStatus");
-        xtw.writeCharacters(status);
-        xtw.writeEndElement();
-
-        xtw.writeEndElement(); // Close reportDetails
-    }
-
-    // Fetch the restriction type dynamically from the database
-    private static String fetchRestrictionTypeFromDatabase(Connection connection) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
-            ps.setString(1, "20");  // Restriction Type Code
-            ps.setString(2, "I");   // Status Code
-
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getString(1); // Return the dynamically fetched restriction type
+        // Check if there were incorrect RICs
+        if (!incorrectRICs.isEmpty()) {
+            StringBuilder failureReasonSB = new StringBuilder(ExtractorConstants.WARNING_INCORRECT_RICS);
+            for (String ric : incorrectRICs) {
+                failureReasonSB.append(ric).append(SEPARATOR);
             }
+            String failureReason = StringUtils.removeEnd(failureReasonSB.toString(), SEPARATOR);
+            staXBuilder.addElement(ExtractorConstants.FAILURE_REASON, failureReason);
         }
-        return "Default Restriction Type";  // Fallback value if not found
-    }
+        staXBuilder.endElement(); // Close report details element
 
-    // Fetch the timestamp dynamically from the database as Date
-    private static Date fetchTimestampFromDatabase(Connection connection) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(SQL_TIMESTAMP)) {
-            ps.setString(1, "20");  // Restriction Type Code
-            ps.setString(2, "I");   // Status Code
+        // Generate the restricted securities list
+        staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY_LIST);
+        for (RestrictedSecurity rsec : restrictions) {
+            staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)
+                    .addElement(ExtractorConstants.SECURITY_DESCRIPTION, rsec.getSecurityDescription());
 
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getTimestamp(1);  // Return the dynamically fetched timestamp as Date
+            // Loop through each type of security identifier (ISIN, CUSIP, RIC, WPK)
+            for (String isin : rsec.getISINS()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, isin);
             }
-        }
-        return new Date();  // Fallback to current date if not found
-    }
-
-    // Method to fetch restriction type dynamically from the database
-    private static void fetchRestrictionType(Connection connection, XMLStreamWriter xtw) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
-            ps.setString(1, "20");  // Restriction Type Code
-            ps.setString(2, "I");   // Status Code
-
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                xtw.writeStartElement("restrictionType");
-                xtw.writeCharacters(rs.getString(1)); // Dynamically fetched restriction type
-                xtw.writeEndElement();
+            for (String cusip : rsec.getCUSIPs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.CUSIP, cusip);
             }
-        }
-    }
-
-    // Method to fetch restrictions dynamically from the database
-    private static void fetchRestrictions(Connection connection, XMLStreamWriter xtw) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTIONS)) {
-            ps.setString(1, "Debt");  // Instrument ID Type
-            ps.setString(2, "20");    // Restriction Type Code
-            ps.setString(3, "I");     // Status Code
-
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                xtw.writeStartElement("restrictedSecurity");
-
-                // Dynamically write security description
-                xtw.writeStartElement("securityDescription");
-                xtw.writeCharacters(rs.getString(2)); // Dynamically fetched instrument name
-                xtw.writeEndElement();
-
-                // Dynamically create security identifiers
-                createSecurityIdentifier(xtw, "ISIN", rs.getString(1)); // Dynamically fetched instrument ISIN
-                createSecurityIdentifier(xtw, "WPK", rs.getString(1)); // Dynamically fetched WPK (if available)
-
-                xtw.writeEndElement(); // Close restrictedSecurity
+            for (String ric : rsec.getRICs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, ric);
             }
+            for (String wpk : rsec.getWPKs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.WPK, wpk);
+            }
+            staXBuilder.endElement(); // Close restricted security element
         }
-    }
-
-    // Helper method to create dynamic securityIdentifier elements
-    private static void createSecurityIdentifier(XMLStreamWriter xtw, String code, String value) throws Exception {
-        xtw.writeStartElement("securityIdentifier");
-
-        xtw.writeStartElement("security:securityNumberingAgencyCode");
-        xtw.writeCharacters(code); // Dynamically fetched code (e.g., ISIN, WPK)
-        xtw.writeEndElement();
-
-        xtw.writeStartElement("security:securityIdentifier");
-        xtw.writeCharacters(value); // Dynamically fetched value
-        xtw.writeEndElement();
-
-        xtw.writeEndElement(); // Close securityIdentifier
+        staXBuilder.endElement(); // Close restricted security list element
     }
 }
