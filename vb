@@ -1,148 +1,114 @@
-package com.db.fusion.rs.quorumxml;
+package com.db.fusion.rs.extractor;
 
-import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import javax.ejb.EJB;
+import javax.ejb.Stateful;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
-public class QuorumXMLGenerator {
+@Stateful
+public class RSReportGenerator {
 
-    private static final Logger LOGGER = LogManager.getLogger(QuorumXMLGenerator.class);
+    private static final Logger LOGGER = LogManager.getLogger(RSReportGenerator.class);
 
-    private static final String URL = "jdbc:oracle:thin:@your_quorum_host:1521:your_db";
-    private static final String USER = "your_username";
-    private static final String PASSWORD = "your_password";
+    private final String SEPARATOR = ",";
+    
+    @EJB
+    private RSDao rsDao;
 
-    private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT restriction_type FROM restriction WHERE restriction_code = ?";
-    private static final String SQL_RESTRICTIONS = "SELECT restriction_id, security_name, instrument_id_type, instrument_id_value " +
-            "FROM restriction WHERE status_code = ? AND restriction_type_code = ?";
+    private String restrictionType;
+    private String overrideRestrictionTypeName;
 
-    public void generateXMLReport(String restrictionCode) {
-        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
-            fetchRestrictionTypeAndGenerateReport(connection, restrictionCode);
-            fetchRestrictionsAndGenerateReport(connection, restrictionCode);
-        } catch (SQLException | XMLStreamException e) {
-            LOGGER.error("Error generating XML report: ", e);
-        }
+    // SQL Queries
+    private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_TYPE_NAME +
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " v WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
+            " AND ROWNUM <= 1 AND " + ExtractorConstants.STATUS_CODE + " = ?";
+
+    private static final String SQL_RESTRICTIONS = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_ID +
+            ", v." + ExtractorConstants.SECURITY_NAME +
+            ", v." + ExtractorConstants.INSTRUMENT_ID_TYPE +
+            ", (CASE WHEN v." + ExtractorConstants.INSTRUMENT_ID_TYPE + " = ?" +
+            " THEN SUBSTR(v." + ExtractorConstants.INSTRUMENT_ID_VALUE + ", 1, " + ExtractorConstants.RIC_MAX_SIZE + ")" +
+            " ELSE v." + ExtractorConstants.INSTRUMENT_ID_VALUE + " END) AS " + ExtractorConstants.INSTRUMENT_ID_VALUE +
+            " FROM (SELECT * FROM (SELECT DISTINCT t." + ExtractorConstants.INSTRUMENT_ISIN + " AS " + ExtractorConstants.RESTRICTION_ID +
+            ", t." + ExtractorConstants.INSTRUMENT_ISIN + ", " + ExtractorConstants.INSTRUMENT_CUSIP +
+            ", t." + ExtractorConstants.INSTRUMENT_WKN + ", " + ExtractorConstants.INSTRUMENT_RIC +
+            ", t." + ExtractorConstants.SECURITY_NAME +
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " t" +
+            " WHERE t." + ExtractorConstants.STATUS_CODE + " = ?" +
+            " AND t." + ExtractorConstants.INSTRUMENT_ISIN + " IS NOT NULL" +
+            " AND t." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
+            ") UNPIVOT(" + ExtractorConstants.INSTRUMENT_ID_VALUE + " FOR " + ExtractorConstants.INSTRUMENT_ID_TYPE +
+            " IN (" + ExtractorConstants.INSTRUMENT_ISIN + " AS '" + ExtractorConstants.ISIN + "', " +
+            ExtractorConstants.INSTRUMENT_CUSIP + " AS '" + ExtractorConstants.CUSIP + "', " +
+            ExtractorConstants.INSTRUMENT_WKN + " AS '" + ExtractorConstants.WPK + "', " +
+            ExtractorConstants.INSTRUMENT_RIC + " AS '" + ExtractorConstants.RIC + "'))) v" +
+            " ORDER BY " + ExtractorConstants.RESTRICTION_ID;
+
+    // Method to set restriction type
+    public void setRestrictionType(String restrictionType, String overrideRestrictionTypeName) {
+        this.restrictionType = restrictionType;
+        this.overrideRestrictionTypeName = overrideRestrictionTypeName;
     }
 
-    private void fetchRestrictionTypeAndGenerateReport(Connection connection, String restrictionCode) throws SQLException, XMLStreamException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
-            preparedStatement.setString(1, restrictionCode);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            while (resultSet.next()) {
-                String restrictionType = resultSet.getString(1);
-                LOGGER.info("Fetched Restriction Type: " + restrictionType);
-                generateReportXML(restrictionType);
+    // Method to generate XML report
+    public void generateReport(XMLStreamWriter xtw) throws Exception {
+        Validate.notNull(restrictionType, "Restriction type is not specified");
+
+        StaXBuilder staXBuilder = new StaXBuilder(xtw);
+
+        String defaultRestrictionType = ExtractorConstants.DEFAULT_RESTRICTION_TYPE;
+        if (overrideRestrictionTypeName != null) {
+            defaultRestrictionType = overrideRestrictionTypeName;
+        } else {
+            defaultRestrictionType = rsDao.getRestrictionType(restrictionType);  // Get the restriction type from the database
+        }
+
+        Set<String> incorrectRICs = new HashSet<>();
+        List<RestrictedSecurity> restrictions = rsDao.getRestrictions(restrictionType, incorrectRICs); // Get list of restrictions from DB
+
+        // Create report details
+        staXBuilder.startElement(ExtractorConstants.REPORT_DETAILS)
+                .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, defaultRestrictionType)
+                .addElement(ExtractorConstants.EXTRACT_TIMESTAMP, DateTimeHelper.formatCalendarGmt(DateTimeHelper.getGMTCalendar()))
+                .addElement(ExtractorConstants.EXTRACT_STATUS, "Success");
+
+        // Check if there were incorrect RICs
+        if (!incorrectRICs.isEmpty()) {
+            StringBuilder failureReasonSB = new StringBuilder(ExtractorConstants.WARNING_INCORRECT_RICS);
+            for (String ric : incorrectRICs) {
+                failureReasonSB.append(ric).append(SEPARATOR);
             }
+            String failureReason = StringUtils.removeEnd(failureReasonSB.toString(), SEPARATOR);
+            staXBuilder.addElement(ExtractorConstants.FAILURE_REASON, failureReason);
         }
-    }
+        staXBuilder.endElement(); // Close report details element
 
-    private void fetchRestrictionsAndGenerateReport(Connection connection, String restrictionCode) throws SQLException, XMLStreamException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTIONS)) {
-            preparedStatement.setString(1, "Active"); // Example filter: change as needed
-            preparedStatement.setString(2, restrictionCode);
-            ResultSet resultSet = preparedStatement.executeQuery();
+        // Generate the restricted securities list
+        staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY_LIST);
+        for (RestrictedSecurity rsec : restrictions) {
+            staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)
+                    .addElement(ExtractorConstants.SECURITY_DESCRIPTION, rsec.getSecurityDescription());
 
-            while (resultSet.next()) {
-                String restrictionId = resultSet.getString("restriction_id");
-                String securityName = resultSet.getString("security_name");
-                String instrumentIdType = resultSet.getString("instrument_id_type");
-                String instrumentIdValue = resultSet.getString("instrument_id_value");
-
-                LOGGER.info("Fetched Data - Restriction ID: " + restrictionId + ", Security Name: " + securityName);
-
-                // Generate XML for restricted security data
-                addRestrictedSecurityToXML(restrictionId, securityName, instrumentIdType, instrumentIdValue);
+            // Loop through each type of security identifier (ISIN, CUSIP, RIC, WPK)
+            for (String isin : rsec.getISINS()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, isin);
             }
+            for (String cusip : rsec.getCUSIPs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.CUSIP, cusip);
+            }
+            for (String ric : rsec.getRICs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, ric);
+            }
+            for (String wpk : rsec.getWPKs()) {
+                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.WPK, wpk);
+            }
+            staXBuilder.endElement(); // Close restricted security element
         }
-    }
-
-    private void generateReportXML(String restrictionType) throws XMLStreamException {
-        LOGGER.debug("Starting XML generation for restriction type: " + restrictionType);
-
-        XMLStreamWriter xmlWriter = new CustomXMLStreamWriter(); // Custom stream writer to output XML to a file or console
-        xmlWriter.writeStartElement("restrictedSecurityList");
-
-        // Add report details
-        xmlWriter.writeStartElement("reportDetails");
-        xmlWriter.writeStartElement("typeOfRestriction");
-        xmlWriter.writeCharacters(restrictionType);
-        xmlWriter.writeEndElement(); // End of typeOfRestriction
-        xmlWriter.writeEndElement(); // End of reportDetails
-
-        // Add restricted securities
-        generateRestrictedSecuritiesList(xmlWriter);
-
-        xmlWriter.writeEndElement(); // End of restrictedSecurityList
-        xmlWriter.flush();
-        xmlWriter.close();
-
-        LOGGER.info("XML Report generation completed for restriction type: " + restrictionType);
-    }
-
-    private void generateRestrictedSecuritiesList(XMLStreamWriter xmlWriter) throws XMLStreamException {
-        // Example of adding a single restricted security to the XML
-        xmlWriter.writeStartElement("restrictedSecurity");
-
-        // Add security description (You can pull this from the database or set it as a constant)
-        xmlWriter.writeStartElement("securityDescription");
-        xmlWriter.writeCharacters("Example Security Name");
-        xmlWriter.writeEndElement(); // End of securityDescription
-
-        // Example of adding multiple identifiers (ISIN, CUSIP, RIC, WPK)
-        addSecurityIdentifier(xmlWriter, "ISIN", "US1234567890");
-        addSecurityIdentifier(xmlWriter, "CUSIP", "123456789");
-        addSecurityIdentifier(xmlWriter, "RIC", "XYZ123");
-        addSecurityIdentifier(xmlWriter, "WPK", "WPK123");
-
-        xmlWriter.writeEndElement(); // End of restrictedSecurity
-    }
-
-    private void addSecurityIdentifier(XMLStreamWriter xmlWriter, String identifierType, String identifierValue) throws XMLStreamException {
-        xmlWriter.writeStartElement("securityIdentifier");
-
-        // Add securityNumberingAgencyCode
-        xmlWriter.writeStartElement("securityNumberingAgencyCode");
-        xmlWriter.writeCharacters(identifierType);
-        xmlWriter.writeEndElement(); // End of securityNumberingAgencyCode
-
-        // Add securityIdentifier
-        xmlWriter.writeStartElement("securityIdentifier");
-        xmlWriter.writeCharacters(identifierValue);
-        xmlWriter.writeEndElement(); // End of securityIdentifier
-
-        xmlWriter.writeEndElement(); // End of securityIdentifier element
-    }
-
-    // Custom XMLStreamWriter to write to a file or stream (assumed implementation)
-    private class CustomXMLStreamWriter implements XMLStreamWriter {
-        @Override
-        public void writeStartElement(String localName) throws XMLStreamException {
-            System.out.println("<" + localName + ">");
-        }
-
-        @Override
-        public void writeEndElement() throws XMLStreamException {
-            System.out.println("</>");
-        }
-
-        @Override
-        public void writeCharacters(String text) throws XMLStreamException {
-            System.out.println(text);
-        }
-
-        @Override
-        public void flush() throws XMLStreamException {
-            // Implement flush logic
-        }
-
-        @Override
-        public void close() throws XMLStreamException {
-            // Implement close logic
-        }
-
-        // Implement other required methods from XMLStreamWriter interface
+        staXBuilder.endElement(); // Close restricted security list element
     }
 }
