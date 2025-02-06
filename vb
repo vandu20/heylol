@@ -17,6 +17,9 @@ public class QuorumXMLGenerator {
     private static final String SQL_RESTRICTION_TYPE =
             "SELECT DISTINCT v.restriction_type_name FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? AND ROWNUM <= 1";
 
+    private static final String SQL_TIMESTAMP =
+            "SELECT DISTINCT v.timestamp FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? AND ROWNUM <= 1";
+
     private static final String SQL_RESTRICTIONS =
             "SELECT DISTINCT v.restriction_id, v.instrument_name, v.instrument_id_type, "
                     + "CASE WHEN v.instrument_id_type = ? THEN SUBSTR(v.instrument_id_value, 1, 14) ELSE v.instrument_id_value END AS instrument_id_value "
@@ -59,10 +62,14 @@ public class QuorumXMLGenerator {
 
     // Method to dynamically write report details from the database
     private static void writeReportDetails(Connection connection, XMLStreamWriter xtw) throws Exception {
-        // Get the report details from the database or generate it dynamically
-        String restrictionType = "Tender/Exercise voting rights";  // Example static value (can be fetched dynamically)
-        String timestamp = "2024-11-19T16:00:07";  // Example static value (can be fetched dynamically)
-        String status = "Success";  // Example static value (can be fetched dynamically)
+        // Fetch the restriction type from the database
+        String restrictionType = fetchRestrictionTypeFromDatabase(connection);
+        
+        // Fetch the timestamp from the database
+        String timestamp = fetchTimestampFromDatabase(connection);
+
+        // Fetching status dynamically (hardcoded as 'Success' here, it can also be fetched dynamically)
+        String status = "Success";  // Can also be fetched dynamically if available
 
         xtw.writeStartElement("reportDetails");
 
@@ -79,6 +86,34 @@ public class QuorumXMLGenerator {
         xtw.writeEndElement();
 
         xtw.writeEndElement(); // Close reportDetails
+    }
+
+    // Fetch the restriction type dynamically from the database
+    private static String fetchRestrictionTypeFromDatabase(Connection connection) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
+            ps.setString(1, "20");  // Restriction Type Code
+            ps.setString(2, "I");   // Status Code
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getString(1); // Return the dynamically fetched restriction type
+            }
+        }
+        return "Default Restriction Type";  // Fallback value if not found
+    }
+
+    // Fetch the timestamp dynamically from the database
+    private static String fetchTimestampFromDatabase(Connection connection) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_TIMESTAMP)) {
+            ps.setString(1, "20");  // Restriction Type Code
+            ps.setString(2, "I");   // Status Code
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getString(1); // Return the dynamically fetched timestamp
+            }
+        }
+        return "2024-11-19T16:00:07";  // Fallback value if not found
     }
 
     // Method to fetch restriction type dynamically from the database
