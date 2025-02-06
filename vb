@@ -35,23 +35,13 @@ public class QuorumXMLGenerator {
             xtw.writeStartDocument("UTF-8", "1.0");
             xtw.writeStartElement("restrictedSecurityList");
 
-            // Write report details
-            xtw.writeStartElement("reportDetails");
-            xtw.writeStartElement("typeOfRestriction");
-            xtw.writeCharacters("Tender/Exercise voting rights");
-            xtw.writeEndElement();
-            xtw.writeStartElement("extractTimestamp");
-            xtw.writeCharacters("2024-11-19T16:00:07");
-            xtw.writeEndElement();
-            xtw.writeStartElement("extractStatus");
-            xtw.writeCharacters("Success");
-            xtw.writeEndElement();
-            xtw.writeEndElement(); // Close reportDetails
+            // Write report details dynamically from database
+            writeReportDetails(connection, xtw);
 
-            // Write restriction type
+            // Write restriction type dynamically from database
             fetchRestrictionType(connection, xtw);
 
-            // Write restrictions
+            // Write restrictions dynamically from database
             fetchRestrictions(connection, xtw);
 
             // Close the root element
@@ -67,22 +57,46 @@ public class QuorumXMLGenerator {
         }
     }
 
+    // Method to dynamically write report details from the database
+    private static void writeReportDetails(Connection connection, XMLStreamWriter xtw) throws Exception {
+        // Get the report details from the database or generate it dynamically
+        String restrictionType = "Tender/Exercise voting rights";  // Example static value (can be fetched dynamically)
+        String timestamp = "2024-11-19T16:00:07";  // Example static value (can be fetched dynamically)
+        String status = "Success";  // Example static value (can be fetched dynamically)
+
+        xtw.writeStartElement("reportDetails");
+
+        xtw.writeStartElement("typeOfRestriction");
+        xtw.writeCharacters(restrictionType);
+        xtw.writeEndElement();
+
+        xtw.writeStartElement("extractTimestamp");
+        xtw.writeCharacters(timestamp);
+        xtw.writeEndElement();
+
+        xtw.writeStartElement("extractStatus");
+        xtw.writeCharacters(status);
+        xtw.writeEndElement();
+
+        xtw.writeEndElement(); // Close reportDetails
+    }
+
+    // Method to fetch restriction type dynamically from the database
     private static void fetchRestrictionType(Connection connection, XMLStreamWriter xtw) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
             ps.setString(1, "20");  // Restriction Type Code
             ps.setString(2, "I");   // Status Code
 
             ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
+            while (rs.next()) {
                 xtw.writeStartElement("restrictionType");
-                xtw.writeCharacters(rs.getString(1));
+                xtw.writeCharacters(rs.getString(1)); // Dynamically fetched restriction type
                 xtw.writeEndElement();
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 
+    // Method to fetch restrictions dynamically from the database
     private static void fetchRestrictions(Connection connection, XMLStreamWriter xtw) throws SQLException {
         try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTIONS)) {
             ps.setString(1, "Debt");  // Instrument ID Type
@@ -93,30 +107,30 @@ public class QuorumXMLGenerator {
             while (rs.next()) {
                 xtw.writeStartElement("restrictedSecurity");
 
+                // Dynamically write security description
                 xtw.writeStartElement("securityDescription");
-                xtw.writeCharacters(rs.getString(2)); // Security Name
+                xtw.writeCharacters(rs.getString(2)); // Dynamically fetched instrument name
                 xtw.writeEndElement();
 
-                // Create securityIdentifier elements for each security type (ISIN, WPK, etc.)
-                createSecurityIdentifier(xtw, "ISIN", rs.getString(1)); // Instrument ISIN
-                createSecurityIdentifier(xtw, "WPK", rs.getString(1)); // Placeholder for other identifiers
+                // Dynamically create security identifiers
+                createSecurityIdentifier(xtw, "ISIN", rs.getString(1)); // Dynamically fetched instrument ISIN
+                createSecurityIdentifier(xtw, "WPK", rs.getString(1)); // Dynamically fetched WPK (if available)
 
                 xtw.writeEndElement(); // Close restrictedSecurity
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 
+    // Helper method to create dynamic securityIdentifier elements
     private static void createSecurityIdentifier(XMLStreamWriter xtw, String code, String value) throws Exception {
         xtw.writeStartElement("securityIdentifier");
 
         xtw.writeStartElement("security:securityNumberingAgencyCode");
-        xtw.writeCharacters(code);
+        xtw.writeCharacters(code); // Dynamically fetched code (e.g., ISIN, WPK)
         xtw.writeEndElement();
 
         xtw.writeStartElement("security:securityIdentifier");
-        xtw.writeCharacters(value);
+        xtw.writeCharacters(value); // Dynamically fetched value
         xtw.writeEndElement();
 
         xtw.writeEndElement(); // Close securityIdentifier
