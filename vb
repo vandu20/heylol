@@ -1,114 +1,127 @@
-package com.db.fusion.rs.extractor;
+package com.db.fusion.instruments.ondemand.util;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import javax.ejb.EJB;
-import javax.ejb.Stateful;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.LogManager;
+import com.db.fusion.instruments.ondemand.constants.ExtractorConstants;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@Stateful
-public class RSReportGenerator {
+import java.sql.*;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.*;
 
-    private static final Logger LOGGER = LogManager.getLogger(RSReportGenerator.class);
+@SpringBootApplication
+public class QuorumDatabaseApplication implements CommandLineRunner {
 
-    private final String SEPARATOR = ",";
+    private static final String URL = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCPS)(HOST=frqrasu.de.da";
+    private static final String USER = "DCA_Y2ZN_USER";
+    private static final String PASSWORD = "DC_Tue291347599May";
     
-    @EJB
-    private RSDao rsDao;
-
-    private String restrictionType;
-    private String overrideRestrictionTypeName;
-
-    // SQL Queries
     private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_TYPE_NAME +
-            " FROM " + ExtractorConstants.VW_RESTRICTION + " v WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
-            " AND ROWNUM <= 1 AND " + ExtractorConstants.STATUS_CODE + " = ?";
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + "= ? " +
+            "AND ROWNUM <= 1 AND " + ExtractorConstants.STATUS_CODE + " = ?";
 
-    private static final String SQL_RESTRICTIONS = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_ID +
-            ", v." + ExtractorConstants.SECURITY_NAME +
-            ", v." + ExtractorConstants.INSTRUMENT_ID_TYPE +
-            ", (CASE WHEN v." + ExtractorConstants.INSTRUMENT_ID_TYPE + " = ?" +
-            " THEN SUBSTR(v." + ExtractorConstants.INSTRUMENT_ID_VALUE + ", 1, " + ExtractorConstants.RIC_MAX_SIZE + ")" +
-            " ELSE v." + ExtractorConstants.INSTRUMENT_ID_VALUE + " END) AS " + ExtractorConstants.INSTRUMENT_ID_VALUE +
-            " FROM (SELECT * FROM (SELECT DISTINCT t." + ExtractorConstants.INSTRUMENT_ISIN + " AS " + ExtractorConstants.RESTRICTION_ID +
-            ", t." + ExtractorConstants.INSTRUMENT_ISIN + ", " + ExtractorConstants.INSTRUMENT_CUSIP +
-            ", t." + ExtractorConstants.INSTRUMENT_WKN + ", " + ExtractorConstants.INSTRUMENT_RIC +
-            ", t." + ExtractorConstants.SECURITY_NAME +
-            " FROM " + ExtractorConstants.VW_RESTRICTION + " t" +
-            " WHERE t." + ExtractorConstants.STATUS_CODE + " = ?" +
-            " AND t." + ExtractorConstants.INSTRUMENT_ISIN + " IS NOT NULL" +
-            " AND t." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
-            ") UNPIVOT(" + ExtractorConstants.INSTRUMENT_ID_VALUE + " FOR " + ExtractorConstants.INSTRUMENT_ID_TYPE +
-            " IN (" + ExtractorConstants.INSTRUMENT_ISIN + " AS '" + ExtractorConstants.ISIN + "', " +
-            ExtractorConstants.INSTRUMENT_CUSIP + " AS '" + ExtractorConstants.CUSIP + "', " +
-            ExtractorConstants.INSTRUMENT_WKN + " AS '" + ExtractorConstants.WPK + "', " +
-            ExtractorConstants.INSTRUMENT_RIC + " AS '" + ExtractorConstants.RIC + "'))) v" +
-            " ORDER BY " + ExtractorConstants.RESTRICTION_ID;
+    private static final String SQL_RESTRICTIONS = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_ID + ", " +
+            "v." + ExtractorConstants.SECURITY_NAME + ", " +
+            "v." + ExtractorConstants.INSTRUMENT_ID_TYPE + ", " +
+            "(CASE WHEN v." + ExtractorConstants.INSTRUMENT_ID_TYPE + " = ? THEN " +
+            "substr(v." + ExtractorConstants.INSTRUMENT_ID_VALUE + ", 1, " + ExtractorConstants.RIC_MAX_SIZE + ") " +
+            "ELSE v." + ExtractorConstants.INSTRUMENT_ID_VALUE + " END) AS " + ExtractorConstants.INSTRUMENT_ID +
+            " FROM " + ExtractorConstants.VW_RESTRICTION + " v " +
+            "WHERE v." + ExtractorConstants.STATUS_CODE + " = ? " +
+            "AND v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ? " +
+            "AND v." + ExtractorConstants.INSTRUMENT_ISIN + " IS NOT NULL";
 
-    // Method to set restriction type
-    public void setRestrictionType(String restrictionType, String overrideRestrictionTypeName) {
-        this.restrictionType = restrictionType;
-        this.overrideRestrictionTypeName = overrideRestrictionTypeName;
+    public static void main(String[] args) {
+        SpringApplication.run(QuorumDatabaseApplication.class, args);
     }
 
-    // Method to generate XML report
-    public void generateReport(XMLStreamWriter xtw) throws Exception {
-        Validate.notNull(restrictionType, "Restriction type is not specified");
+    @Override
+    public void run(String... args) throws Exception {
 
-        StaXBuilder staXBuilder = new StaXBuilder(xtw);
+        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
 
-        String defaultRestrictionType = ExtractorConstants.DEFAULT_RESTRICTION_TYPE;
-        if (overrideRestrictionTypeName != null) {
-            defaultRestrictionType = overrideRestrictionTypeName;
-        } else {
-            defaultRestrictionType = rsDao.getRestrictionType(restrictionType);  // Get the restriction type from the database
+            // Create a new Document for XML generation
+            DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+            Document doc = docBuilder.newDocument();
+
+            // Create root element
+            Element rootElement = doc.createElementNS("http://fusion.ibit.gto.db.com/FusionCOM/RestrictedSecurityList-v1", "restrictedSecurityList");
+            doc.appendChild(rootElement);
+
+            // Create reportDetails element
+            Element reportDetails = doc.createElement("reportDetails");
+            rootElement.appendChild(reportDetails);
+
+            Element typeOfRestriction = doc.createElement("typeOfRestriction");
+            typeOfRestriction.appendChild(doc.createTextNode("Tender/Exercise voting rights"));
+            reportDetails.appendChild(typeOfRestriction);
+
+            Element extractTimestamp = doc.createElement("extractTimestamp");
+            extractTimestamp.appendChild(doc.createTextNode("2024-11-19T16:00:07"));
+            reportDetails.appendChild(extractTimestamp);
+
+            Element extractStatus = doc.createElement("extractStatus");
+            extractStatus.appendChild(doc.createTextNode("Success"));
+            reportDetails.appendChild(extractStatus);
+
+            fetchRestrictions(connection, doc, rootElement);
+
+            // Output the generated XML
+            System.out.println("Generated XML:");
+            printXML(doc);
+
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
+    }
 
-        Set<String> incorrectRICs = new HashSet<>();
-        List<RestrictedSecurity> restrictions = rsDao.getRestrictions(restrictionType, incorrectRICs); // Get list of restrictions from DB
+    private void fetchRestrictions(Connection connection, Document doc, Element rootElement) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTIONS)) {
+            preparedStatement.setString(1, "Debt");
+            preparedStatement.setString(2, "I");
+            preparedStatement.setString(3, "14");
 
-        // Create report details
-        staXBuilder.startElement(ExtractorConstants.REPORT_DETAILS)
-                .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, defaultRestrictionType)
-                .addElement(ExtractorConstants.EXTRACT_TIMESTAMP, DateTimeHelper.formatCalendarGmt(DateTimeHelper.getGMTCalendar()))
-                .addElement(ExtractorConstants.EXTRACT_STATUS, "Success");
+            ResultSet resultSet = preparedStatement.executeQuery();
 
-        // Check if there were incorrect RICs
-        if (!incorrectRICs.isEmpty()) {
-            StringBuilder failureReasonSB = new StringBuilder(ExtractorConstants.WARNING_INCORRECT_RICS);
-            for (String ric : incorrectRICs) {
-                failureReasonSB.append(ric).append(SEPARATOR);
+            while (resultSet.next()) {
+                // Create restrictedSecurity element for each row
+                Element restrictedSecurity = doc.createElement("restrictedSecurity");
+                rootElement.appendChild(restrictedSecurity);
+
+                Element securityDescription = doc.createElement("securityDescription");
+                securityDescription.appendChild(doc.createTextNode(resultSet.getString(2))); // Security Name
+                restrictedSecurity.appendChild(securityDescription);
+
+                // Create securityIdentifier elements for each security type (ISIN, WPK, etc.)
+                createSecurityIdentifier(doc, restrictedSecurity, "ISIN", resultSet.getString(1)); // Instrument ISIN
+                createSecurityIdentifier(doc, restrictedSecurity, "WPK", resultSet.getString(1)); // Placeholder for other identifiers
+
             }
-            String failureReason = StringUtils.removeEnd(failureReasonSB.toString(), SEPARATOR);
-            staXBuilder.addElement(ExtractorConstants.FAILURE_REASON, failureReason);
+
         }
-        staXBuilder.endElement(); // Close report details element
+    }
 
-        // Generate the restricted securities list
-        staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY_LIST);
-        for (RestrictedSecurity rsec : restrictions) {
-            staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)
-                    .addElement(ExtractorConstants.SECURITY_DESCRIPTION, rsec.getSecurityDescription());
+    private void createSecurityIdentifier(Document doc, Element restrictedSecurity, String code, String value) {
+        Element securityIdentifier = doc.createElement("securityIdentifier");
+        restrictedSecurity.appendChild(securityIdentifier);
 
-            // Loop through each type of security identifier (ISIN, CUSIP, RIC, WPK)
-            for (String isin : rsec.getISINS()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, isin);
-            }
-            for (String cusip : rsec.getCUSIPs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.CUSIP, cusip);
-            }
-            for (String ric : rsec.getRICs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, ric);
-            }
-            for (String wpk : rsec.getWPKs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.WPK, wpk);
-            }
-            staXBuilder.endElement(); // Close restricted security element
-        }
-        staXBuilder.endElement(); // Close restricted security list element
+        Element agencyCode = doc.createElement("security:securityNumberingAgencyCode");
+        agencyCode.appendChild(doc.createTextNode(code));
+        securityIdentifier.appendChild(agencyCode);
+
+        Element identifier = doc.createElement("security:securityIdentifier");
+        identifier.appendChild(doc.createTextNode(value));
+        securityIdentifier.appendChild(identifier);
+    }
+
+    private void printXML(Document doc) throws Exception {
+        // Print XML as string (for debugging or logging)
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        Transformer transformer = transformerFactory.newTransformer();
+        DOMSource source = new DOMSource(doc);
+        StreamResult result = new StreamResult(System.out);
+        transformer.transform(source, result);
     }
 }
