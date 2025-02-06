@@ -1,127 +1,124 @@
-package com.db.fusion.instruments.ondemand.util;
+package com.db.fusion.rs.stax;
 
-import com.db.fusion.instruments.ondemand.constants.ExtractorConstants;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.sql.*;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import org.w3c.dom.*;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamWriter;
 
-@SpringBootApplication
-public class QuorumDatabaseApplication implements CommandLineRunner {
+public class QuorumXMLGenerator {
 
-    private static final String URL = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCPS)(HOST=frqrasu.de.da";
+    // Database connection details
+    private static final String URL = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCPS)(HOST=frqrasu.de.da)))";
     private static final String USER = "DCA_Y2ZN_USER";
     private static final String PASSWORD = "DC_Tue291347599May";
-    
-    private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_TYPE_NAME +
-            " FROM " + ExtractorConstants.VW_RESTRICTION + " WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + "= ? " +
-            "AND ROWNUM <= 1 AND " + ExtractorConstants.STATUS_CODE + " = ?";
 
-    private static final String SQL_RESTRICTIONS = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_ID + ", " +
-            "v." + ExtractorConstants.SECURITY_NAME + ", " +
-            "v." + ExtractorConstants.INSTRUMENT_ID_TYPE + ", " +
-            "(CASE WHEN v." + ExtractorConstants.INSTRUMENT_ID_TYPE + " = ? THEN " +
-            "substr(v." + ExtractorConstants.INSTRUMENT_ID_VALUE + ", 1, " + ExtractorConstants.RIC_MAX_SIZE + ") " +
-            "ELSE v." + ExtractorConstants.INSTRUMENT_ID_VALUE + " END) AS " + ExtractorConstants.INSTRUMENT_ID +
-            " FROM " + ExtractorConstants.VW_RESTRICTION + " v " +
-            "WHERE v." + ExtractorConstants.STATUS_CODE + " = ? " +
-            "AND v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ? " +
-            "AND v." + ExtractorConstants.INSTRUMENT_ISIN + " IS NOT NULL";
+    // SQL Queries
+    private static final String SQL_RESTRICTION_TYPE =
+            "SELECT DISTINCT v.restriction_type_name FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? AND ROWNUM <= 1";
+
+    private static final String SQL_RESTRICTIONS =
+            "SELECT DISTINCT v.restriction_id, v.instrument_name, v.instrument_id_type, "
+                    + "CASE WHEN v.instrument_id_type = ? THEN SUBSTR(v.instrument_id_value, 1, 14) ELSE v.instrument_id_value END AS instrument_id_value "
+                    + "FROM quorum_ing_owner.v_dmart_restriction v WHERE v.restriction_type_cd = ? AND v.status_cde = ? "
+                    + "ORDER BY v.restriction_id";
 
     public static void main(String[] args) {
-        SpringApplication.run(QuorumDatabaseApplication.class, args);
-    }
+        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
+             OutputStream outputStream = new FileOutputStream("restricted_securities.xml")) {
 
-    @Override
-    public void run(String... args) throws Exception {
+            // Initialize XML writer
+            XMLOutputFactory factory = XMLOutputFactory.newInstance();
+            XMLStreamWriter xtw = factory.createXMLStreamWriter(outputStream, "UTF-8");
 
-        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
+            // Start XML document
+            xtw.writeStartDocument("UTF-8", "1.0");
+            xtw.writeStartElement("restrictedSecurityList");
 
-            // Create a new Document for XML generation
-            DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
-            Document doc = docBuilder.newDocument();
+            // Write report details
+            xtw.writeStartElement("reportDetails");
+            xtw.writeStartElement("typeOfRestriction");
+            xtw.writeCharacters("Tender/Exercise voting rights");
+            xtw.writeEndElement();
+            xtw.writeStartElement("extractTimestamp");
+            xtw.writeCharacters("2024-11-19T16:00:07");
+            xtw.writeEndElement();
+            xtw.writeStartElement("extractStatus");
+            xtw.writeCharacters("Success");
+            xtw.writeEndElement();
+            xtw.writeEndElement(); // Close reportDetails
 
-            // Create root element
-            Element rootElement = doc.createElementNS("http://fusion.ibit.gto.db.com/FusionCOM/RestrictedSecurityList-v1", "restrictedSecurityList");
-            doc.appendChild(rootElement);
+            // Write restriction type
+            fetchRestrictionType(connection, xtw);
 
-            // Create reportDetails element
-            Element reportDetails = doc.createElement("reportDetails");
-            rootElement.appendChild(reportDetails);
+            // Write restrictions
+            fetchRestrictions(connection, xtw);
 
-            Element typeOfRestriction = doc.createElement("typeOfRestriction");
-            typeOfRestriction.appendChild(doc.createTextNode("Tender/Exercise voting rights"));
-            reportDetails.appendChild(typeOfRestriction);
+            // Close the root element
+            xtw.writeEndElement();
+            xtw.writeEndDocument();
+            xtw.flush();
+            xtw.close();
 
-            Element extractTimestamp = doc.createElement("extractTimestamp");
-            extractTimestamp.appendChild(doc.createTextNode("2024-11-19T16:00:07"));
-            reportDetails.appendChild(extractTimestamp);
+            System.out.println("XML file generated successfully!");
 
-            Element extractStatus = doc.createElement("extractStatus");
-            extractStatus.appendChild(doc.createTextNode("Success"));
-            reportDetails.appendChild(extractStatus);
-
-            fetchRestrictions(connection, doc, rootElement);
-
-            // Output the generated XML
-            System.out.println("Generated XML:");
-            printXML(doc);
-
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    private void fetchRestrictions(Connection connection, Document doc, Element rootElement) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTIONS)) {
-            preparedStatement.setString(1, "Debt");
-            preparedStatement.setString(2, "I");
-            preparedStatement.setString(3, "14");
+    private static void fetchRestrictionType(Connection connection, XMLStreamWriter xtw) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
+            ps.setString(1, "20");  // Restriction Type Code
+            ps.setString(2, "I");   // Status Code
 
-            ResultSet resultSet = preparedStatement.executeQuery();
-
-            while (resultSet.next()) {
-                // Create restrictedSecurity element for each row
-                Element restrictedSecurity = doc.createElement("restrictedSecurity");
-                rootElement.appendChild(restrictedSecurity);
-
-                Element securityDescription = doc.createElement("securityDescription");
-                securityDescription.appendChild(doc.createTextNode(resultSet.getString(2))); // Security Name
-                restrictedSecurity.appendChild(securityDescription);
-
-                // Create securityIdentifier elements for each security type (ISIN, WPK, etc.)
-                createSecurityIdentifier(doc, restrictedSecurity, "ISIN", resultSet.getString(1)); // Instrument ISIN
-                createSecurityIdentifier(doc, restrictedSecurity, "WPK", resultSet.getString(1)); // Placeholder for other identifiers
-
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                xtw.writeStartElement("restrictionType");
+                xtw.writeCharacters(rs.getString(1));
+                xtw.writeEndElement();
             }
-
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
-    private void createSecurityIdentifier(Document doc, Element restrictedSecurity, String code, String value) {
-        Element securityIdentifier = doc.createElement("securityIdentifier");
-        restrictedSecurity.appendChild(securityIdentifier);
+    private static void fetchRestrictions(Connection connection, XMLStreamWriter xtw) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_RESTRICTIONS)) {
+            ps.setString(1, "Debt");  // Instrument ID Type
+            ps.setString(2, "20");    // Restriction Type Code
+            ps.setString(3, "I");     // Status Code
 
-        Element agencyCode = doc.createElement("security:securityNumberingAgencyCode");
-        agencyCode.appendChild(doc.createTextNode(code));
-        securityIdentifier.appendChild(agencyCode);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                xtw.writeStartElement("restrictedSecurity");
 
-        Element identifier = doc.createElement("security:securityIdentifier");
-        identifier.appendChild(doc.createTextNode(value));
-        securityIdentifier.appendChild(identifier);
+                xtw.writeStartElement("securityDescription");
+                xtw.writeCharacters(rs.getString(2)); // Security Name
+                xtw.writeEndElement();
+
+                // Create securityIdentifier elements for each security type (ISIN, WPK, etc.)
+                createSecurityIdentifier(xtw, "ISIN", rs.getString(1)); // Instrument ISIN
+                createSecurityIdentifier(xtw, "WPK", rs.getString(1)); // Placeholder for other identifiers
+
+                xtw.writeEndElement(); // Close restrictedSecurity
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
-    private void printXML(Document doc) throws Exception {
-        // Print XML as string (for debugging or logging)
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        Transformer transformer = transformerFactory.newTransformer();
-        DOMSource source = new DOMSource(doc);
-        StreamResult result = new StreamResult(System.out);
-        transformer.transform(source, result);
+    private static void createSecurityIdentifier(XMLStreamWriter xtw, String code, String value) throws Exception {
+        xtw.writeStartElement("securityIdentifier");
+
+        xtw.writeStartElement("security:securityNumberingAgencyCode");
+        xtw.writeCharacters(code);
+        xtw.writeEndElement();
+
+        xtw.writeStartElement("security:securityIdentifier");
+        xtw.writeCharacters(value);
+        xtw.writeEndElement();
+
+        xtw.writeEndElement(); // Close securityIdentifier
     }
 }
