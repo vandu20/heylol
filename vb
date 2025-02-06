@@ -58,7 +58,7 @@ public class QuorumXMLGenerator {
             System.out.println("XML file generated successfully!");
 
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace();  // You can skip this, assuming no error
         }
     }
 
