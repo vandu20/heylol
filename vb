@@ -1,28 +1,23 @@
-package com.db.fusion.rs.extractor;
-
-import java.util.ArrayList;
+import java.sql.*;
+import javax.xml.stream.XMLStreamWriter;
 import java.util.List;
-import java.util.Set;
+import java.util.ArrayList;
 import javax.ejb.EJB;
 import javax.ejb.Stateful;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.LogManager;
 
 @Stateful
 public class RSReportGenerator {
 
-    private static final Logger LOGGER = LogManager.getLogger(RSReportGenerator.class);
-
-    private final String SEPARATOR = ",";
+    private static final String SEPARATOR = ",";
     
     @EJB
-    private RSDao rsDao;
+    private RSDao rsDao;  // Assuming rsDao is your DAO class handling DB operations
 
-    private String restrictionType;
-    private String overrideRestrictionTypeName;
-
+    // Database connection details
+    private static final String DB_URL = "jdbc:oracle:thin:@localhost:1521:xe"; // Replace with your DB URL
+    private static final String DB_USER = "your_db_user"; // Replace with your DB username
+    private static final String DB_PASSWORD = "your_db_password"; // Replace with your DB password
+    
     // SQL Queries
     private static final String SQL_RESTRICTION_TYPE = "SELECT DISTINCT v." + ExtractorConstants.RESTRICTION_TYPE_NAME +
             " FROM " + ExtractorConstants.VW_RESTRICTION + " v WHERE v." + ExtractorConstants.RESTRICTION_TYPE_CODE + " = ?" +
@@ -49,66 +44,81 @@ public class RSReportGenerator {
             ExtractorConstants.INSTRUMENT_RIC + " AS '" + ExtractorConstants.RIC + "'))) v" +
             " ORDER BY " + ExtractorConstants.RESTRICTION_ID;
 
-    // Method to set restriction type
-    public void setRestrictionType(String restrictionType, String overrideRestrictionTypeName) {
-        this.restrictionType = restrictionType;
-        this.overrideRestrictionTypeName = overrideRestrictionTypeName;
+    // Method to fetch restriction type from the database
+    public String getRestrictionType(String restrictionCode) {
+        try (Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             PreparedStatement stmt = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
+            stmt.setString(1, restrictionCode);
+            stmt.setString(2, ExtractorConstants.STATUS_ACTIVE);
+
+            ResultSet resultSet = stmt.executeQuery();
+            if (resultSet.next()) {
+                return resultSet.getString(ExtractorConstants.RESTRICTION_TYPE_NAME);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
-    // Method to generate XML report
+    // Method to fetch restrictions from the database
+    public List<RestrictedSecurity> getRestrictions(String restrictionType) {
+        List<RestrictedSecurity> restrictions = new ArrayList<>();
+        try (Connection connection = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             PreparedStatement stmt = connection.prepareStatement(SQL_RESTRICTIONS)) {
+            stmt.setString(1, ExtractorConstants.INSTRUMENT_ID_ISIN);
+            stmt.setString(2, ExtractorConstants.STATUS_ACTIVE);
+            stmt.setString(3, restrictionType);
+
+            ResultSet resultSet = stmt.executeQuery();
+            while (resultSet.next()) {
+                String restrictionId = resultSet.getString(ExtractorConstants.RESTRICTION_ID);
+                String securityName = resultSet.getString(ExtractorConstants.SECURITY_NAME);
+                String instrumentIdType = resultSet.getString(ExtractorConstants.INSTRUMENT_ID_TYPE);
+                String instrumentIdValue = resultSet.getString(ExtractorConstants.INSTRUMENT_ID_VALUE);
+
+                // Build RestrictedSecurity object
+                RestrictedSecurity restrictedSecurity = new RestrictedSecurity(securityName);
+                restrictedSecurity.addSecurityIdentifier(instrumentIdType, instrumentIdValue);
+                restrictions.add(restrictedSecurity);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return restrictions;
+    }
+
+    // Method to generate the XML report
     public void generateReport(XMLStreamWriter xtw) throws Exception {
-        Validate.notNull(restrictionType, "Restriction type is not specified");
+        String restrictionType = "SampleRestriction"; // Example restriction code
+        String restrictionTypeName = getRestrictionType(restrictionType);
+        List<RestrictedSecurity> restrictions = getRestrictions(restrictionType);
 
         StaXBuilder staXBuilder = new StaXBuilder(xtw);
 
-        String defaultRestrictionType = ExtractorConstants.DEFAULT_RESTRICTION_TYPE;
-        if (overrideRestrictionTypeName != null) {
-            defaultRestrictionType = overrideRestrictionTypeName;
-        } else {
-            defaultRestrictionType = rsDao.getRestrictionType(restrictionType);  // Get the restriction type from the database
-        }
-
-        Set<String> incorrectRICs = new HashSet<>();
-        List<RestrictedSecurity> restrictions = rsDao.getRestrictions(restrictionType, incorrectRICs); // Get list of restrictions from DB
-
         // Create report details
         staXBuilder.startElement(ExtractorConstants.REPORT_DETAILS)
-                .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, defaultRestrictionType)
+                .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, restrictionTypeName)
                 .addElement(ExtractorConstants.EXTRACT_TIMESTAMP, DateTimeHelper.formatCalendarGmt(DateTimeHelper.getGMTCalendar()))
                 .addElement(ExtractorConstants.EXTRACT_STATUS, "Success");
 
-        // Check if there were incorrect RICs
-        if (!incorrectRICs.isEmpty()) {
-            StringBuilder failureReasonSB = new StringBuilder(ExtractorConstants.WARNING_INCORRECT_RICS);
-            for (String ric : incorrectRICs) {
-                failureReasonSB.append(ric).append(SEPARATOR);
-            }
-            String failureReason = StringUtils.removeEnd(failureReasonSB.toString(), SEPARATOR);
-            staXBuilder.addElement(ExtractorConstants.FAILURE_REASON, failureReason);
-        }
-        staXBuilder.endElement(); // Close report details element
-
-        // Generate the restricted securities list
+        // Start restricted security list
         staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY_LIST);
         for (RestrictedSecurity rsec : restrictions) {
             staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)
                     .addElement(ExtractorConstants.SECURITY_DESCRIPTION, rsec.getSecurityDescription());
 
-            // Loop through each type of security identifier (ISIN, CUSIP, RIC, WPK)
-            for (String isin : rsec.getISINS()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, isin);
+            // Loop through identifiers (ISIN, CUSIP, RIC, WPK)
+            for (SecurityIdentifier id : rsec.getSecurityIdentifiers()) {
+                staXBuilder.startElement(ExtractorConstants.SECURITY_IDENTIFIER)
+                        .addElement(ExtractorConstants.SECURITY_NUMBERING_AGENCY_CODE, id.getType())
+                        .addElement(ExtractorConstants.SECURITY_IDENTIFIER, id.getValue())
+                        .endElement();
             }
-            for (String cusip : rsec.getCUSIPs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.CUSIP, cusip);
-            }
-            for (String ric : rsec.getRICs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, ric);
-            }
-            for (String wpk : rsec.getWPKs()) {
-                RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.WPK, wpk);
-            }
-            staXBuilder.endElement(); // Close restricted security element
+            staXBuilder.endElement(); // End restricted security
         }
-        staXBuilder.endElement(); // Close restricted security list element
+        staXBuilder.endElement(); // End restricted security list
+
+        staXBuilder.endElement(); // End report details
     }
 }
