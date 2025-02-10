@@ -1,23 +1,13 @@
-    public void generateXMLReport(String restrictionType) {
-        try {
-            // Simulated XMLStreamWriter (Replace this with actual writer)
-            XMLStreamWriter xtw = new StaXBuilder(); 
+    private String fetchRestrictionType(Connection connection) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
+            preparedStatement.setString(1, "20"); // Restriction type code
+            preparedStatement.setString(2, "I"); // Status code
 
-            LOGGER.info("Generating XML report...");
+            ResultSet resultSet = preparedStatement.executeQuery();
 
-            StaXBuilder staXBuilder = new StaXBuilder(xtw);
-
-            // Create XML report details
-            generateReportDetails(staXBuilder, restrictionType);
-
-            // Simulating restricted securities list
-            List<String> restrictions = List.of("Sec1", "Sec2", "Sec3");  
-            generaterestrictedSecuritiesList(staXBuilder, restrictions);
-
-            staXBuilder.endElement(); // Close "restrictedSecurityList" element
-            LOGGER.info("Report generation completed successfully");
-
-        } catch (Exception e) {
-            LOGGER.error("Error while generating XML report", e);
+            if (resultSet.next()) {
+                return resultSet.getString(1);
+            }
         }
+        return "UNKNOWN";
     }
