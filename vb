@@ -1,28 +1,55 @@
-@Override
-    public void run(String... args) throws Exception {
-        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
-            String restrictionType = fetchRestrictionType(connection);
-            
-            // Call RSReportGenerator to generate XML report
-            RSReportGenerator reportGenerator = new RSReportGenerator();
-            reportGenerator.generateXMLReport(restrictionType);
-        } catch (SQLException e) {
-            e.printStackTrace();
+public class RSReportGenerator {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RSReportGenerator.class);
+
+    public void generateXMLReport(String restrictionType) {
+        try {
+            // Simulated XMLStreamWriter (Replace this with actual writer)
+            XMLStreamWriter xtw = new StaXBuilder(); 
+
+            LOGGER.info("Generating XML report...");
+
+            StaXBuilder staXBuilder = new StaXBuilder(xtw);
+
+            // Create XML report details
+            generateReportDetails(staXBuilder, restrictionType);
+
+            // Simulating restricted securities list
+            List<String> restrictions = List.of("Sec1", "Sec2", "Sec3");  
+            generaterestrictedSecuritiesList(staXBuilder, restrictions);
+
+            staXBuilder.endElement(); // Close "restrictedSecurityList" element
+            LOGGER.info("Report generation completed successfully");
+
+        } catch (Exception e) {
+            LOGGER.error("Error while generating XML report", e);
         }
     }
 
-    private String fetchRestrictionType(Connection connection) throws SQLException {
-        String restrictionType = "DEFAULT"; // Default fallback value
-        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTION_TYPE)) {
-            preparedStatement.setString(1, "20"); // restriction type code
-            preparedStatement.setString(2, "I");  // status code
+    protected void generateReportDetails(StaXBuilder staXBuilder, String restrictionType) throws XMLStreamException {
+        LOGGER.debug("Creating report details...");
 
-            try (ResultSet resultSet = preparedStatement.executeQuery()) {
-                if (resultSet.next()) {
-                    restrictionType = resultSet.getString(1);
-                    System.out.println("Fetched Restriction Type: " + restrictionType);
-                }
-            }
-        }
-        return restrictionType;
+        String extractTimestamp = DateTimeHelper.formatCalendarGmt(DateTimeHelper.getGMTCalendar());
+        String status = ExtractorConstants.SUCCESS; // Always "SUCCESS"
+
+        staXBuilder.startElement(ExtractorConstants.REPORT_DETAILS)
+            .addElement(ExtractorConstants.TYPE_OF_RESTRICTION, restrictionType)
+            .addElement(ExtractorConstants.EXTRACT_TIMESTAMP, extractTimestamp)
+            .addElement(ExtractorConstants.EXTRACT_STATUS, status);
+
+        LOGGER.debug("Report details have been created successfully");
+        staXBuilder.endElement();
     }
+
+    protected void generaterestrictedSecuritiesList(StaXBuilder staXBuilder, List<String> restrictions) throws XMLStreamException {
+        LOGGER.debug("Generating restricted securities list...");
+
+        staXBuilder.startElement("RestrictedSecurities");
+
+        for (String security : restrictions) {
+            staXBuilder.addElement("Security", security);
+        }
+
+        staXBuilder.endElement();
+        LOGGER.debug("Restricted securities list added successfully.");
+    }
+}
