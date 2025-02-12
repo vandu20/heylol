@@ -1,14 +1,27 @@
-@Override
-public void run(String... args) throws Exception {
-    try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
-        String restrictionType = fetchRestrictionType(connection);
-        LOGGER.info("Fetched restriction type: " + restrictionType);
+ public List<RestrictedSecurity> fetchRestrictions(Connection connection) throws SQLException {
+        List<RestrictedSecurity> restrictions = new ArrayList<>();
 
-        // Generate and save report
-        String filePath = generateRSReport(restrictionType, null);
-        LOGGER.info("Restricted securities report generated at: " + filePath);
+        try (PreparedStatement preparedStatement = connection.prepareStatement(SQL_RESTRICTIONS)) {
+            
+            System.out.println("SQL_RESTRICTIONS: " + SQL_RESTRICTIONS);
 
-    } catch (SQLException e) {
-        LOGGER.error("Database error: " + e.getMessage(), e);
+            // Setting parameters
+            preparedStatement.setString(1, "Debt");
+            preparedStatement.setString(2, "I");
+            preparedStatement.setString(3, "14");
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                
+                while (resultSet.next()) {
+                    RestrictedSecurity restriction = new RestrictedSecurity(
+                        resultSet.getString(1), // Restriction ID
+                        resultSet.getString(2), // Security Name
+                        resultSet.getString(3), // ID Type
+                        resultSet.getString(4)  // ID Value
+                    );
+                    restrictions.add(restriction);
+                }
+            }
+        }
+        return restrictions;
     }
-}
