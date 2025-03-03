@@ -1,5 +1,8 @@
- @Mock
+@Mock
     private RSDao rsDao;
+
+    @Mock
+    private RSDao fetchRestrictionTypeRestriction;  // Fix: Mock this dependency
 
     @Mock
     private Connection connection;
@@ -41,17 +44,20 @@
 
     @Test
     void testDoInXMLStream() throws Exception {
-        // Ensure restrictionType is set to "21" before calling doInXMLStream
+        // Fix: Ensure restrictionType is set before calling doInXMLStream
         setPrivateField(rsReportGenerator, "restrictionType", "21");
         setPrivateField(rsReportGenerator, "overrideRestrictionTypeName", null);
+        setPrivateField(rsReportGenerator, "fetchRestrictionTypeRestriction", fetchRestrictionTypeRestriction);
 
         StaXBuilder staXBuilder = mock(StaXBuilder.class);
         Set<String> incorrectRICs = new HashSet<>();
         List<RestrictedSecurity> restrictions = new ArrayList<>();
 
-        when(rsDao.fetchRestrictions(any(Connection.class), anySet())).thenReturn(restrictions);
+        // Fix: Ensure the mock returns a non-null value
+        when(fetchRestrictionTypeRestriction.fetchRestrictions(any(Connection.class), anySet()))
+            .thenReturn(restrictions);
 
         rsReportGenerator.doInXMLStream(xmlStreamWriter);
 
-        verify(rsDao, times(1)).fetchRestrictions(any(Connection.class), anySet());
+        verify(fetchRestrictionTypeRestriction, times(1)).fetchRestrictions(any(Connection.class), anySet());
     }
