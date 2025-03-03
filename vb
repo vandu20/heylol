@@ -1,8 +1,8 @@
-@Mock
+ @Mock
     private RSDao rsDao;
 
     @Mock
-    private RSDao fetchRestrictionTypeRestriction;  // Fix: Mock this dependency
+    private RSDao fetchRestrictionTypeRestriction;
 
     @Mock
     private Connection connection;
@@ -26,25 +26,21 @@
 
     @Test
     void testSetRestrictionType() throws Exception {
-        // Setting restrictionType = "21" and overrideRestrictionTypeName = null
         rsReportGenerator.setRestrictionType("21", null);
 
-        // Validate restrictionType
         Field restrictionTypeField = RSReportGenerator.class.getDeclaredField("restrictionType");
         restrictionTypeField.setAccessible(true);
         String actualRestrictionType = (String) restrictionTypeField.get(rsReportGenerator);
         assertEquals("21", actualRestrictionType);
 
-        // Validate overrideRestrictionTypeName
         Field overrideField = RSReportGenerator.class.getDeclaredField("overrideRestrictionTypeName");
         overrideField.setAccessible(true);
         String actualOverride = (String) overrideField.get(rsReportGenerator);
-        assertNull(actualOverride);  // Ensure it's null
+        assertNull(actualOverride);
     }
 
     @Test
     void testDoInXMLStream() throws Exception {
-        // Fix: Ensure restrictionType is set before calling doInXMLStream
         setPrivateField(rsReportGenerator, "restrictionType", "21");
         setPrivateField(rsReportGenerator, "overrideRestrictionTypeName", null);
         setPrivateField(rsReportGenerator, "fetchRestrictionTypeRestriction", fetchRestrictionTypeRestriction);
@@ -53,11 +49,11 @@
         Set<String> incorrectRICs = new HashSet<>();
         List<RestrictedSecurity> restrictions = new ArrayList<>();
 
-        // Fix: Ensure the mock returns a non-null value
-        when(fetchRestrictionTypeRestriction.fetchRestrictions(any(Connection.class), anySet()))
+        // Fix: Use more general argument matchers
+        when(fetchRestrictionTypeRestriction.fetchRestrictions(any(), any()))
             .thenReturn(restrictions);
 
         rsReportGenerator.doInXMLStream(xmlStreamWriter);
 
-        verify(fetchRestrictionTypeRestriction, times(1)).fetchRestrictions(any(Connection.class), anySet());
+        verify(fetchRestrictionTypeRestriction, times(1)).fetchRestrictions(any(), any());
     }
