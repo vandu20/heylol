@@ -1,4 +1,4 @@
- @Mock
+    @Mock
     private RSDao rsDao;
 
     @Mock
@@ -16,10 +16,18 @@
     }
 
     @Test
-    void testSetRestrictionType() {
-        rsReportGenerator.setRestrictionType("TYPE_1", "OVERRIDE_TYPE_1");
+    void testSetRestrictionType() throws Exception {
+        String expectedRestrictionType = "TYPE_1";
+        String expectedOverrideRestrictionTypeName = "OVERRIDE_TYPE_1";
         
-        assertEquals("TYPE_1", rsReportGenerator.restrictionType);
+        rsReportGenerator.setRestrictionType(expectedRestrictionType, expectedOverrideRestrictionTypeName);
+
+        // Using reflection to access the private field
+        Field restrictionTypeField = RSReportGenerator.class.getDeclaredField("restrictionType");
+        restrictionTypeField.setAccessible(true);
+        String actualRestrictionType = (String) restrictionTypeField.get(rsReportGenerator);
+
+        assertEquals(expectedRestrictionType, actualRestrictionType);
     }
 
     @Test
