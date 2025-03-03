@@ -1,4 +1,4 @@
-    @Mock
+  @Mock
     private RSDao rsDao;
 
     @Mock
@@ -15,23 +15,36 @@
         rsReportGenerator = new RSReportGenerator();
     }
 
+    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+        Field field = RSReportGenerator.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
     @Test
     void testSetRestrictionType() throws Exception {
-        String expectedRestrictionType = "TYPE_1";
-        String expectedOverrideRestrictionTypeName = "OVERRIDE_TYPE_1";
-        
-        rsReportGenerator.setRestrictionType(expectedRestrictionType, expectedOverrideRestrictionTypeName);
+        // Setting restrictionType = "21" and overrideRestrictionTypeName = null
+        rsReportGenerator.setRestrictionType("21", null);
 
-        // Using reflection to access the private field
+        // Validate restrictionType
         Field restrictionTypeField = RSReportGenerator.class.getDeclaredField("restrictionType");
         restrictionTypeField.setAccessible(true);
         String actualRestrictionType = (String) restrictionTypeField.get(rsReportGenerator);
+        assertEquals("21", actualRestrictionType);
 
-        assertEquals(expectedRestrictionType, actualRestrictionType);
+        // Validate overrideRestrictionTypeName
+        Field overrideField = RSReportGenerator.class.getDeclaredField("overrideRestrictionTypeName");
+        overrideField.setAccessible(true);
+        String actualOverride = (String) overrideField.get(rsReportGenerator);
+        assertNull(actualOverride);  // Ensure it's null
     }
 
     @Test
     void testDoInXMLStream() throws Exception {
+        // Ensure restrictionType is set to "21" before calling doInXMLStream
+        setPrivateField(rsReportGenerator, "restrictionType", "21");
+        setPrivateField(rsReportGenerator, "overrideRestrictionTypeName", null);
+
         StaXBuilder staXBuilder = mock(StaXBuilder.class);
         Set<String> incorrectRICs = new HashSet<>();
         List<RestrictedSecurity> restrictions = new ArrayList<>();
