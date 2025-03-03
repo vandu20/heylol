@@ -1,4 +1,4 @@
-  @Mock
+ @Mock
     private RSDao rsDao;
 
     @Mock
