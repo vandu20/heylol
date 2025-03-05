@@ -8,16 +8,17 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import javax.xml.stream.XMLStreamException;
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
+import javax.xml.stream.XMLStreamWriter;
+import java.util.Arrays;
+import java.util.List;
 
-class StaxTemplateImplTest {
+class StaXCallbackImplTest {
 
     @Mock
-    private StaXCallbackImpl rsReportGenerator;
+    private RSDao rsDao;
 
     @InjectMocks
-    private StaxTemplateImpl staxTemplate;
+    private StaXCallbackImpl staXCallback;
 
     @BeforeEach
     void setUp() {
@@ -25,35 +26,33 @@ class StaxTemplateImplTest {
     }
 
     @Test
-    void testGenerateXML_Success() {
-        OutputStream outputStream = new ByteArrayOutputStream();
+    void testDoInXMLStream_Success() throws XMLStreamException {
+        XMLStreamWriter xtw = mock(XMLStreamWriter.class);
+        List<RestrictedSecurity> mockSecurities = Arrays.asList(new RestrictedSecurity());
 
-        assertDoesNotThrow(() -> {
-            staxTemplate.generateXML(outputStream);
-        });
+        when(rsDao.fetchRestrictions(any(), any())).thenReturn(mockSecurities);
 
-        verify(rsReportGenerator, times(1)).doInXMLStream(any());
+        assertDoesNotThrow(() -> staXCallback.doInXMLStream(xtw));
+
+        verify(xtw, times(1)).writeStartDocument("UTF-8", "1.0");
+        verify(xtw, times(1)).writeEndDocument();
     }
 
     @Test
-    void testGenerateXML_NullOutputStream() {
+    void testDoInXMLStream_NullXMLStreamWriter() {
         Exception exception = assertThrows(NullPointerException.class, () -> {
-            staxTemplate.generateXML(null);
+            staXCallback.doInXMLStream(null);
         });
 
-        assertEquals("OutputStream is not initialized", exception.getMessage());
+        assertEquals("XMLStreamWriter is not initialized", exception.getMessage());
     }
 
     @Test
-    void testGenerateXML_XMLStreamExceptionHandling() throws XMLStreamException {
-        doThrow(new XMLStreamException("Test Exception")).when(rsReportGenerator).doInXMLStream(any());
+    void testDoInXMLStream_HandlesSQLException() throws Exception {
+        XMLStreamWriter xtw = mock(XMLStreamWriter.class);
 
-        OutputStream outputStream = new ByteArrayOutputStream();
+        when(rsDao.fetchRestrictions(any(), any())).thenThrow(new RuntimeException("DB Error"));
 
-        assertDoesNotThrow(() -> {
-            staxTemplate.generateXML(outputStream);
-        });
-
-        verify(rsReportGenerator, times(1)).doInXMLStream(any());
+        assertDoesNotThrow(() -> staXCallback.doInXMLStream(xtw));
     }
 }
