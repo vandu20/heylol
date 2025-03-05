@@ -1,59 +1,59 @@
- @Mock
-    private RSDao rsDao;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+import javax.xml.stream.XMLStreamException;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+
+class StaxTemplateImplTest {
 
     @Mock
-    private RSDao fetchRestrictionTypeRestriction;
-
-    @Mock
-    private Connection connection;
-
-    @Mock
-    private XMLStreamWriter xmlStreamWriter;
+    private StaXCallbackImpl rsReportGenerator;
 
     @InjectMocks
-    private RSReportGenerator rsReportGenerator;
+    private StaxTemplateImpl staxTemplate;
 
     @BeforeEach
     void setUp() {
-        rsReportGenerator = new RSReportGenerator();
-    }
-
-    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
-        Field field = RSReportGenerator.class.getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(target, value);
+        MockitoAnnotations.openMocks(this);
     }
 
     @Test
-    void testSetRestrictionType() throws Exception {
-        rsReportGenerator.setRestrictionType("21", null);
+    void testGenerateXML_Success() {
+        OutputStream outputStream = new ByteArrayOutputStream();
 
-        Field restrictionTypeField = RSReportGenerator.class.getDeclaredField("restrictionType");
-        restrictionTypeField.setAccessible(true);
-        String actualRestrictionType = (String) restrictionTypeField.get(rsReportGenerator);
-        assertEquals("21", actualRestrictionType);
+        assertDoesNotThrow(() -> {
+            staxTemplate.generateXML(outputStream);
+        });
 
-        Field overrideField = RSReportGenerator.class.getDeclaredField("overrideRestrictionTypeName");
-        overrideField.setAccessible(true);
-        String actualOverride = (String) overrideField.get(rsReportGenerator);
-        assertNull(actualOverride);
+        verify(rsReportGenerator, times(1)).doInXMLStream(any());
     }
 
     @Test
-    void testDoInXMLStream() throws Exception {
-        setPrivateField(rsReportGenerator, "restrictionType", "21");
-        setPrivateField(rsReportGenerator, "overrideRestrictionTypeName", null);
-        setPrivateField(rsReportGenerator, "fetchRestrictionTypeRestriction", fetchRestrictionTypeRestriction);
+    void testGenerateXML_NullOutputStream() {
+        Exception exception = assertThrows(NullPointerException.class, () -> {
+            staxTemplate.generateXML(null);
+        });
 
-        StaXBuilder staXBuilder = mock(StaXBuilder.class);
-        Set<String> incorrectRICs = new HashSet<>();
-        List<RestrictedSecurity> restrictions = new ArrayList<>();
-
-        // Fix: Use more general argument matchers
-        when(fetchRestrictionTypeRestriction.fetchRestrictions(any(), any()))
-            .thenReturn(restrictions);
-
-        rsReportGenerator.doInXMLStream(xmlStreamWriter);
-
-        verify(fetchRestrictionTypeRestriction, times(1)).fetchRestrictions(any(), any());
+        assertEquals("OutputStream is not initialized", exception.getMessage());
     }
+
+    @Test
+    void testGenerateXML_XMLStreamExceptionHandling() throws XMLStreamException {
+        doThrow(new XMLStreamException("Test Exception")).when(rsReportGenerator).doInXMLStream(any());
+
+        OutputStream outputStream = new ByteArrayOutputStream();
+
+        assertDoesNotThrow(() -> {
+            staxTemplate.generateXML(outputStream);
+        });
+
+        verify(rsReportGenerator, times(1)).doInXMLStream(any());
+    }
+}
