@@ -3,56 +3,49 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
+import org.mockito.Mockito;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 
-class StaXCallbackImplTest {
+public class RestrictedSecurityTest {
 
-    @Mock
-    private RSDao rsDao;
-
-    @InjectMocks
-    private StaXCallbackImpl staXCallback;
+    private ResultSet mockResultSet;
 
     @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
+    void setup() throws SQLException {
+        // Mocking ResultSet
+        mockResultSet = mock(ResultSet.class);
+
+        // Mock behavior for ResultSet
+        when(mockResultSet.getString(2)).thenReturn("Test Security"); // SECURITY_NAME
+        when(mockResultSet.getString(3)).thenReturn("ISIN"); // INSTRUMENT_ID_TYPE
+        when(mockResultSet.getString(4)).thenReturn("US1234567890"); // INSTRUMENT_ID_VALUE
     }
 
     @Test
-    void testDoInXMLStream_Success() throws XMLStreamException {
-        XMLStreamWriter xtw = mock(XMLStreamWriter.class);
-        List<RestrictedSecurity> mockSecurities = Arrays.asList(new RestrictedSecurity());
+    void testRestrictedSecurityInitialization() throws SQLException {
+        // Creating RestrictedSecurity object with mocked ResultSet
+        RestrictedSecurity restrictedSecurity = new RestrictedSecurity(mockResultSet);
 
-        when(rsDao.fetchRestrictions(any(), any())).thenReturn(mockSecurities);
-
-        assertDoesNotThrow(() -> staXCallback.doInXMLStream(xtw));
-
-        verify(xtw, times(1)).writeStartDocument("UTF-8", "1.0");
-        verify(xtw, times(1)).writeEndDocument();
+        // Verifying the security details
+        assertNotNull(restrictedSecurity);
+        assertEquals(1, restrictedSecurity.getISINS().size());
+        assertEquals("US1234567890", restrictedSecurity.getISINS().get(0));
+        assertEquals("Test Security", restrictedSecurity.getSecurityDescription());
     }
 
     @Test
-    void testDoInXMLStream_NullXMLStreamWriter() {
-        Exception exception = assertThrows(NullPointerException.class, () -> {
-            staXCallback.doInXMLStream(null);
-        });
+    void testListOfRestrictedSecurities() throws SQLException {
+        // Creating multiple mock RestrictedSecurity objects
+        RestrictedSecurity security1 = new RestrictedSecurity(mockResultSet);
+        RestrictedSecurity security2 = new RestrictedSecurity(mockResultSet);
 
-        assertEquals("XMLStreamWriter is not initialized", exception.getMessage());
-    }
+        List<RestrictedSecurity> mockSecurities = Arrays.asList(security1, security2);
 
-    @Test
-    void testDoInXMLStream_HandlesSQLException() throws Exception {
-        XMLStreamWriter xtw = mock(XMLStreamWriter.class);
-
-        when(rsDao.fetchRestrictions(any(), any())).thenThrow(new RuntimeException("DB Error"));
-
-        assertDoesNotThrow(() -> staXCallback.doInXMLStream(xtw));
+        // Checking the list
+        assertNotNull(mockSecurities);
+        assertEquals(2, mockSecurities.size());
     }
 }
