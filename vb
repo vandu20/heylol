@@ -1,51 +1,78 @@
-import static org.mockito.Mockito.*;
+package com.db.fusion.rs.dao;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Arrays;
-import java.util.List;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-public class RestrictedSecurityTest {
+@ExtendWith(MockitoExtension.class)
+class RSDaoImplTest {
 
+    @Mock
+    private Connection mockConnection;
+
+    @Mock
+    private PreparedStatement mockPreparedStatement;
+
+    @Mock
     private ResultSet mockResultSet;
 
+    @InjectMocks
+    private RSDaoImpl rsDaoImpl;
+
     @BeforeEach
-    void setup() throws SQLException {
-        // Mocking ResultSet
-        mockResultSet = mock(ResultSet.class);
-
-        // Mock behavior for ResultSet
-        when(mockResultSet.getString(2)).thenReturn("Test Security"); // SECURITY_NAME
-        when(mockResultSet.getString(3)).thenReturn("ISIN"); // INSTRUMENT_ID_TYPE
-        when(mockResultSet.getString(4)).thenReturn("US1234567890"); // INSTRUMENT_ID_VALUE
+    void setUp() throws SQLException {
+        // Mocking SQL execution steps
+        when(mockConnection.prepareStatement(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.executeQuery()).thenReturn(mockResultSet);
     }
 
     @Test
-    void testRestrictedSecurityInitialization() throws SQLException {
-        // Creating RestrictedSecurity object with mocked ResultSet
-        RestrictedSecurity restrictedSecurity = new RestrictedSecurity(mockResultSet);
+    void testFetchRestrictionType_Found() throws SQLException {
+        // Mocking ResultSet behavior to return a restriction type
+        when(mockResultSet.next()).thenReturn(true);
+        when(mockResultSet.getString(1)).thenReturn("RESTRICTED_TYPE_ABC");
 
-        // Verifying the security details
-        assertNotNull(restrictedSecurity);
-        assertEquals(1, restrictedSecurity.getISINS().size());
-        assertEquals("US1234567890", restrictedSecurity.getISINS().get(0));
-        assertEquals("Test Security", restrictedSecurity.getSecurityDescription());
+        String restrictionType = rsDaoImpl.fetchRestrictionType(mockConnection);
+
+        // Assertions
+        assertNotNull(restrictionType);
+        assertEquals("RESTRICTED_TYPE_ABC", restrictionType);
+
+        // Verify interactions with mocks
+        verify(mockPreparedStatement).setString(1, "21");
+        verify(mockPreparedStatement).setString(2, "A");
+        verify(mockPreparedStatement).executeQuery();
+        verify(mockResultSet, times(1)).next();
+        verify(mockResultSet, times(1)).getString(1);
     }
 
     @Test
-    void testListOfRestrictedSecurities() throws SQLException {
-        // Creating multiple mock RestrictedSecurity objects
-        RestrictedSecurity security1 = new RestrictedSecurity(mockResultSet);
-        RestrictedSecurity security2 = new RestrictedSecurity(mockResultSet);
+    void testFetchRestrictionType_NotFound() throws SQLException {
+        // Mocking ResultSet behavior to return no data
+        when(mockResultSet.next()).thenReturn(false);
 
-        List<RestrictedSecurity> mockSecurities = Arrays.asList(security1, security2);
+        String restrictionType = rsDaoImpl.fetchRestrictionType(mockConnection);
 
-        // Checking the list
-        assertNotNull(mockSecurities);
-        assertEquals(2, mockSecurities.size());
+        // Assertions
+        assertNotNull(restrictionType);
+        assertEquals("UNKNOWN", restrictionType); // Assuming UNKNOWN is the default fallback
+
+        // Verify interactions with mocks
+        verify(mockPreparedStatement).setString(1, "21");
+        verify(mockPreparedStatement).setString(2, "A");
+        verify(mockPreparedStatement).executeQuery();
+        verify(mockResultSet, times(1)).next();
+        verify(mockResultSet, never()).getString(1); // Should not fetch data if no row exists
     }
 }
