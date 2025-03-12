@@ -1,35 +1,29 @@
-@Test
-void testFetchRestrictions() throws SQLException {
-    // Arrange
-    Set<String> incorrectRICs = new HashSet<>();
+import static org.junit.jupiter.api.Assertions.*;
 
-    // Mock ResultSet behavior
-    when(mockResultSet.next()).thenReturn(true, false); // First call: true, Second call: false (end of result set)
-    when(mockResultSet.getString(1)).thenReturn("ID_123");
+import org.junit.jupiter.api.Test;
 
-    // Creating a mock RestrictedSecurity object and placing it in the map
-    RestrictedSecurity mockSecurity = mock(RestrictedSecurity.class);
-    Map<String, RestrictedSecurity> restrictions = new HashMap<>();
-    restrictions.put("ID_123", mockSecurity);
+class RSDaoExceptionTest {
 
-    // Correct stubbing using doAnswer() since process() is void
-    doAnswer(invocation -> {
-        LOGGER.info("Processing restricted security...");
-        return null;
-    }).when(restrictedSecurityService).process(any(ResultSet.class), eq(mockSecurity));
+    @Test
+    void testConstructorWithMessage() {
+        String message = "Test exception message";
+        RSDaoException exception = new RSDaoException(message);
+        assertEquals(message, exception.getMessage());
+    }
 
-    // Act
-    List<RestrictedSecurity> restrictionsList = rsDaoImpl.fetchRestrictions(mockConnection, incorrectRICs);
+    @Test
+    void testConstructorWithMessageAndCause() {
+        String message = "Test exception message";
+        Throwable cause = new RuntimeException("Cause message");
+        RSDaoException exception = new RSDaoException(message, cause);
+        assertEquals(message, exception.getMessage());
+        assertEquals(cause, exception.getCause());
+    }
 
-    // Assert
-    assertNotNull(restrictionsList, "Restrictions list should not be null");
-    assertFalse(restrictionsList.isEmpty(), "Restrictions list should not be empty");
-    assertEquals(1, restrictionsList.size(), "Expected one restriction entry");
-
-    // Verify interactions
-    verify(mockPreparedStatement, times(1)).setString(1, "RIC");
-    verify(mockPreparedStatement, times(1)).setString(2, "A");
-    verify(mockPreparedStatement, times(1)).setString(3, "21");
-    verify(mockResultSet, times(1)).next();
-    verify(restrictedSecurityService, times(1)).process(any(ResultSet.class), eq(mockSecurity));
+    @Test
+    void testConstructorWithCause() {
+        Throwable cause = new RuntimeException("Cause message");
+        RSDaoException exception = new RSDaoException(cause);
+        assertEquals(cause, exception.getCause());
+    }
 }
