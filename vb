@@ -1,108 +1,82 @@
-package com.db.fusion.rs.model;
+package com.db.fusion.rs.dao;
 
+import com.db.fusion.rs.model.RestrictedSecurity;
+import com.db.fusion.rs.service.RestrictedSecurityService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.*;
 
-class RestrictedSecurityTest {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    @Test
-    void testEquals_SameObject() {
-        RestrictedSecurity security1 = new RestrictedSecurity();
-        assertEquals(security1, security1, "Expected object to be equal to itself");
+@ExtendWith(MockitoExtension.class)
+class RSDaoImplTest {
+
+    @InjectMocks
+    private RSDaoImpl rsDao;
+
+    @Mock
+    private RestrictedSecurityService restrictedSecurityService;
+
+    @Mock
+    private Connection mockConnection;
+
+    @Mock
+    private PreparedStatement mockPreparedStatement;
+
+    @Mock
+    private ResultSet mockResultSet;
+
+    @BeforeEach
+    void setUp() throws SQLException {
+        when(mockConnection.prepareStatement(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.executeQuery()).thenReturn(mockResultSet);
+        when(mockPreparedStatement.setFetchSize(anyInt())).thenReturn(mockPreparedStatement);
     }
 
     @Test
-    void testEquals_DifferentObjectsWithSameData() {
-        List<String> correctRICs = Arrays.asList("RIC1", "RIC2");
-        Set<String> incorrectRICs = new HashSet<>(Collections.singletonList("RIC3"));
-        List<String> ISINs = Arrays.asList("ISIN1", "ISIN2");
-        List<String> CUSIPs = Arrays.asList("CUSIP1", "CUSIP2");
-        List<String> WPKs = Arrays.asList("WPK1", "WPK2");
-        String securityDescription = "Test Security";
+    void testFetchRestrictions_Success() throws SQLException {
+        // Mocking ResultSet behavior
+        when(mockResultSet.next()).thenReturn(true, true, false); // Simulate two rows
 
-        RestrictedSecurity security1 = new RestrictedSecurity(correctRICs, incorrectRICs, ISINs, CUSIPs, WPKs, securityDescription);
-        RestrictedSecurity security2 = new RestrictedSecurity(correctRICs, incorrectRICs, ISINs, CUSIPs, WPKs, securityDescription);
+        when(mockResultSet.getString(1)).thenReturn("ID_1", "ID_2"); // Mocking ID retrieval
+        when(mockResultSet.getString(2)).thenReturn("Security A", "Security B");
 
-        assertEquals(security1, security2, "Expected objects with same data to be equal");
+        Set<String> incorrectRICs = new HashSet<>();
+        List<RestrictedSecurity> result = rsDao.fetchRestrictions(mockConnection, incorrectRICs);
+
+        assertNotNull(result, "Result should not be null");
+        assertEquals(2, result.size(), "Expected two restricted securities");
+        verify(mockPreparedStatement, times(3)).setString(anyInt(), anyString()); // Ensure setString is called
+        verify(mockPreparedStatement).executeQuery(); // Ensure query is executed
     }
 
     @Test
-    void testEquals_DifferentObjectsWithDifferentData() {
-        RestrictedSecurity security1 = new RestrictedSecurity();
-        RestrictedSecurity security2 = new RestrictedSecurity(Arrays.asList("RIC1"), new HashSet<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), "Test Security");
+    void testFetchRestrictions_EmptyResultSet() throws SQLException {
+        when(mockResultSet.next()).thenReturn(false); // Simulate no data
 
-        assertNotEquals(security1, security2, "Expected objects with different data to be not equal");
+        Set<String> incorrectRICs = new HashSet<>();
+        List<RestrictedSecurity> result = rsDao.fetchRestrictions(mockConnection, incorrectRICs);
+
+        assertNotNull(result, "Result should not be null");
+        assertTrue(result.isEmpty(), "Expected empty list when no data found");
+        verify(mockPreparedStatement).executeQuery(); // Ensure query is executed
     }
 
     @Test
-    void testHashCode_SameData() {
-        List<String> correctRICs = Arrays.asList("RIC1", "RIC2");
-        Set<String> incorrectRICs = new HashSet<>(Collections.singletonList("RIC3"));
-        List<String> ISINs = Arrays.asList("ISIN1", "ISIN2");
-        List<String> CUSIPs = Arrays.asList("CUSIP1", "CUSIP2");
-        List<String> WPKs = Arrays.asList("WPK1", "WPK2");
-        String securityDescription = "Test Security";
+    void testFetchRestrictions_SQLException() throws SQLException {
+        when(mockConnection.prepareStatement(anyString())).thenThrow(new SQLException("Database Error"));
 
-        RestrictedSecurity security1 = new RestrictedSecurity(correctRICs, incorrectRICs, ISINs, CUSIPs, WPKs, securityDescription);
-        RestrictedSecurity security2 = new RestrictedSecurity(correctRICs, incorrectRICs, ISINs, CUSIPs, WPKs, securityDescription);
-
-        assertEquals(security1.hashCode(), security2.hashCode(), "Expected objects with same data to have the same hashCode");
-    }
-
-    @Test
-    void testToString() {
-        RestrictedSecurity security = new RestrictedSecurity(Arrays.asList("RIC1"), new HashSet<>(Collections.singletonList("RIC3")), Arrays.asList("ISIN1"), Arrays.asList("CUSIP1"), Arrays.asList("WPK1"), "Test Security");
-
-        String expectedString = "RestrictedSecurity(correctRICs=[RIC1], incorrectRICs=[RIC3], ISINs=[ISIN1], CUSIPs=[CUSIP1], WPKs=[WPK1], securityDescription=Test Security)";
-        assertEquals(expectedString, security.toString(), "Expected toString output does not match");
-    }
-
-    @Test
-    void testSetCorrectRICs() {
-        RestrictedSecurity security = new RestrictedSecurity();
-        List<String> newRICs = Arrays.asList("RIC1", "RIC2");
-        security.setCorrectRICs(newRICs);
-        assertEquals(newRICs, security.getCorrectRICs(), "Expected correctRICs to be set properly");
-    }
-
-    @Test
-    void testSetIncorrectRICs() {
-        RestrictedSecurity security = new RestrictedSecurity();
-        Set<String> newIncorrectRICs = new HashSet<>(Collections.singletonList("RIC3"));
-        security.setIncorrectRICs(newIncorrectRICs);
-        assertEquals(newIncorrectRICs, security.getIncorrectRICs(), "Expected incorrectRICs to be set properly");
-    }
-
-    @Test
-    void testSetISINs() {
-        RestrictedSecurity security = new RestrictedSecurity();
-        List<String> newISINs = Arrays.asList("ISIN1", "ISIN2");
-        security.setISINs(newISINs);
-        assertEquals(newISINs, security.getISINs(), "Expected ISINs to be set properly");
-    }
-
-    @Test
-    void testSetCUSIPs() {
-        RestrictedSecurity security = new RestrictedSecurity();
-        List<String> newCUSIPs = Arrays.asList("CUSIP1", "CUSIP2");
-        security.setCUSIPs(newCUSIPs);
-        assertEquals(newCUSIPs, security.getCUSIPs(), "Expected CUSIPs to be set properly");
-    }
-
-    @Test
-    void testSetWPKs() {
-        RestrictedSecurity security = new RestrictedSecurity();
-        List<String> newWPKs = Arrays.asList("WPK1", "WPK2");
-        security.setWPKs(newWPKs);
-        assertEquals(newWPKs, security.getWPKs(), "Expected WPKs to be set properly");
-    }
-
-    @Test
-    void testCanEqual() {
-        RestrictedSecurity security1 = new RestrictedSecurity();
-        RestrictedSecurity security2 = new RestrictedSecurity();
-        assertTrue(security1.canEqual(security2), "Expected canEqual to return true for objects of the same type");
+        Set<String> incorrectRICs = new HashSet<>();
+        assertThrows(SQLException.class, () -> rsDao.fetchRestrictions(mockConnection, incorrectRICs), "Expected SQLException to be thrown");
     }
 }
