@@ -3,7 +3,7 @@ void testFetchRestrictions() throws SQLException {
     // Arrange
     Set<String> incorrectRICs = new HashSet<>();
 
-    // Mock ResultSet behavior to return one entry
+    // Mock ResultSet behavior
     when(mockResultSet.next()).thenReturn(true, false); // First call: true, Second call: false (end of result set)
     when(mockResultSet.getString(1)).thenReturn("ID_123");
 
@@ -12,12 +12,11 @@ void testFetchRestrictions() throws SQLException {
     Map<String, RestrictedSecurity> restrictions = new HashMap<>();
     restrictions.put("ID_123", mockSecurity);
 
-    // Ensure that fetchRestrictions() correctly retrieves the security
-    when(restrictedSecurityService.process(any(ResultSet.class), eq(mockSecurity)))
-        .thenAnswer(invocation -> {
-            LOGGER.info("Processing restricted security...");
-            return null;
-        });
+    // Correct stubbing using doAnswer() since process() is void
+    doAnswer(invocation -> {
+        LOGGER.info("Processing restricted security...");
+        return null;
+    }).when(restrictedSecurityService).process(any(ResultSet.class), eq(mockSecurity));
 
     // Act
     List<RestrictedSecurity> restrictionsList = rsDaoImpl.fetchRestrictions(mockConnection, incorrectRICs);
@@ -27,7 +26,7 @@ void testFetchRestrictions() throws SQLException {
     assertFalse(restrictionsList.isEmpty(), "Restrictions list should not be empty");
     assertEquals(1, restrictionsList.size(), "Expected one restriction entry");
 
-    // Verify method interactions
+    // Verify interactions
     verify(mockPreparedStatement, times(1)).setString(1, "RIC");
     verify(mockPreparedStatement, times(1)).setString(2, "A");
     verify(mockPreparedStatement, times(1)).setString(3, "21");
