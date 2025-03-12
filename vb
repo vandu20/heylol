@@ -3,24 +3,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.xml.stream.XMLStreamWriter;
-import javax.xml.stream.XMLOutputFactory;
-import java.io.ByteArrayOutputStream;
-import java.sql.Connection;
+import javax.xml.stream.XMLStreamException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-@ExtendWith(MockitoExtension.class)
-public class StaXCallbackImplTest {
+class StaXCallbackImplTest {
 
     @InjectMocks
     private StaXCallbackImpl staXCallbackImpl;
@@ -29,89 +22,52 @@ public class StaXCallbackImplTest {
     private RSDao rsDao;
 
     @Mock
-    private Connection connection;
-
-    private XMLStreamWriter xtw;
-    private ByteArrayOutputStream output;
+    private StaXBuilder staXBuilder;
 
     @BeforeEach
-    void setup() throws Exception {
+    void setup() {
         MockitoAnnotations.openMocks(this);
-        XMLOutputFactory xof = XMLOutputFactory.newInstance();
-        output = new ByteArrayOutputStream(5000000);
-        xtw = xof.createXMLStreamWriter(output, "UTF-8");
     }
 
-    /***
-     * Test case for successful execution of doInXMLStream
+    /**
+     * Test: `hasDaoException == true` should add `PARTIAL_SUCCESS` and `DATASOURCE_ERROR`
      */
     @Test
-    void testDoInXMLStream_Success() throws Exception {
-        // Mock return values
-        List<RestrictedSecurity> mockRestrictions = new ArrayList<>();
-        mockRestrictions.add(new RestrictedSecurity("RIC001"));
-        mockRestrictions.add(new RestrictedSecurity("RIC002"));
+    void testGenerateReportDetails_HasDaoException() throws Exception {
+        when(rsDao.fetchRestrictionType(any())).thenReturn("Type1");
 
-        when(rsDao.fetchRestrictions(any(), any())).thenReturn(mockRestrictions);
+        Method method = StaXCallbackImpl.class.getDeclaredMethod("generateReportDetails", StaXBuilder.class, boolean.class, Set.class);
+        method.setAccessible(true);
 
-        // Execute method
-        staXCallbackImpl.doInXMLStream(xtw);
+        method.invoke(staXCallbackImpl, staXBuilder, true, new HashSet<>());
 
-        // Verify interactions
-        verify(rsDao, times(1)).fetchRestrictions(any(), any());
-
-        // Validate XML output
-        String xmlOutput = output.toString();
-        assertTrue(xmlOutput.contains("<restrictedSecurityList>"));
-        assertTrue(xmlOutput.contains("RIC001"));
-        assertTrue(xmlOutput.contains("RIC002"));
-        assertTrue(xmlOutput.contains("</restrictedSecurityList>"));
+        verify(staXBuilder).startElement(ExtractorConstants.REPORT_DETAILS);
+        verify(staXBuilder).addElement(ExtractorConstants.TYPE_OF_RESTRICTION, "Type1");
+        verify(staXBuilder).addElement(ExtractorConstants.EXTRACT_STATUS, ExtractorConstants.PARTIAL_SUCCESS);
+        verify(staXBuilder).addElement(ExtractorConstants.FAILURE_REASON, ExtractorConstants.DATASOURCE_ERROR);
+        verify(staXBuilder).endElement();
     }
 
-    /***
-     * Test case for handling SQLException in doInXMLStream
+    /**
+     * Test: `hasDaoException == false` but `incorrectRICs` exist → should list incorrect RICs
      */
     @Test
-    void testDoInXMLStream_SQLException() throws Exception {
-        // Mock `fetchRestrictions` to throw SQLException
-        when(rsDao.fetchRestrictions(any(), any())).thenThrow(new SQLException("Database error"));
-
-        // Expect RuntimeException due to SQLException
-        RuntimeException thrown = assertThrows(RuntimeException.class, () -> {
-            staXCallbackImpl.doInXMLStream(xtw);
-        });
-
-        assertEquals("java.sql.SQLException: Database error", thrown.getMessage());
-
-        // Verify interactions
-        verify(rsDao, times(1)).fetchRestrictions(any(), any());
-    }
-
-    /***
-     * Test case for handling incorrect RICs scenario
-     */
-    @Test
-    void testDoInXMLStream_IncorrectRICs() throws Exception {
-        List<RestrictedSecurity> mockRestrictions = new ArrayList<>();
-        mockRestrictions.add(new RestrictedSecurity("RIC001"));
-        mockRestrictions.add(new RestrictedSecurity("RIC002"));
+    void testGenerateReportDetails_IncorrectRICs() throws Exception {
+        when(rsDao.fetchRestrictionType(any())).thenReturn("Type1");
 
         Set<String> incorrectRICs = new HashSet<>();
-        incorrectRICs.add("RIC003");
+        incorrectRICs.add("RIC123");
+        incorrectRICs.add("RIC456");
 
-        when(rsDao.fetchRestrictions(any(), any())).thenReturn(mockRestrictions);
+        Method method = StaXCallbackImpl.class.getDeclaredMethod("generateReportDetails", StaXBuilder.class, boolean.class, Set.class);
+        method.setAccessible(true);
 
-        // Execute method
-        staXCallbackImpl.doInXMLStream(xtw);
+        method.invoke(staXCallbackImpl, staXBuilder, false, incorrectRICs);
 
-        // Verify interactions
-        verify(rsDao, times(1)).fetchRestrictions(any(), any());
-
-        // Validate XML output for incorrect RICs
-        String xmlOutput = output.toString();
-        assertTrue(xmlOutput.contains("<restrictedSecurityList>"));
-        assertTrue(xmlOutput.contains("RIC001"));
-        assertTrue(xmlOutput.contains("RIC002"));
-        assertFalse(xmlOutput.contains("RIC003")); // Incorrect RICs should not be included in valid records
+        verify(staXBuilder).startElement(ExtractorConstants.REPORT_DETAILS);
+        verify(staXBuilder).addElement(ExtractorConstants.TYPE_OF_RESTRICTION, "Type1");
+        verify(staXBuilder).addElement(ExtractorConstants.EXTRACT_STATUS, ExtractorConstants.SUCCESS);
+        verify(staXBuilder).addElement(eq(ExtractorConstants.FAILURE_REASON), contains("RIC123,RIC456"));
+        verify(staXBuilder).endElement();
     }
 }
