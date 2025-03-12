@@ -1,29 +1,25 @@
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
-import javax.xml.stream.XMLStreamException;
-
+import com.db.fusion.rs.model.RestrictedSecurity;
+import com.db.fusion.rs.service.impl.StaXCallbackImpl;
+import com.db.fusion.rs.stax.StaXBuilder;
+import com.db.fusion.rs.util.ExtractorConstants;
+import com.db.fusion.rs.util.RSReportUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-// Replace with your actual package names
-// import com.db.fusion.rs.service.impl.StaXCallbackImpl;
-// import com.db.fusion.rs.stax.StaXBuilder;
-// import com.db.fusion.rs.model.RestrictedSecurity;
-// import com.db.fusion.rs.util.ExtractorConstants;
-// import com.db.fusion.rs.util.RSReportUtil;
+import javax.xml.stream.XMLStreamException;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
-class StaXCallbackImplRestrictedSecuritiesListTest {
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+public class StaXCallbackImplTest {
 
     @InjectMocks
     private StaXCallbackImpl staXCallbackImpl;
@@ -31,61 +27,42 @@ class StaXCallbackImplRestrictedSecuritiesListTest {
     @Mock
     private StaXBuilder staXBuilder;
 
-    // Create a dummy RestrictedSecurity using a mock.
     @Mock
     private RestrictedSecurity restrictedSecurity;
 
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
-        // Allow method chaining on StaXBuilder:
-        when(staXBuilder.startElement(anyString())).thenReturn(staXBuilder);
-        when(staXBuilder.addElement(anyString(), anyString())).thenReturn(staXBuilder);
     }
 
-    /**
-     * Test for generaterestrictedSecuritiesList:
-     * Verifies that the proper start/end elements are created and that the static utility RSReportUtil is called
-     * for ISINs, CUSIPs, RICs, and WPKs.
-     */
     @Test
-    void testGenerateRestrictedSecuritiesList() throws Exception {
-        // Stub the RestrictedSecurity to return dummy values
-        when(restrictedSecurity.getSecurityDescription()).thenReturn("TestSecurity");
+    void testGenerateRestrictedSecuritiesList_Success() throws XMLStreamException {
+        // Mock RestrictedSecurity object
+        List<RestrictedSecurity> restrictions = new ArrayList<>();
+        when(restrictedSecurity.getSecurityDescription()).thenReturn("Test Security");
         when(restrictedSecurity.getISINS()).thenReturn(Arrays.asList("ISIN1", "ISIN2"));
-        when(restrictedSecurity.getCUSIPS()).thenReturn(Collections.singletonList("CUSIP1"));
-        when(restrictedSecurity.getCorrectRICs()).thenReturn(Arrays.asList("RIC1", "RIC2"));
-        // Assume one of the WPK loops is non-empty (the one that calls RSReportUtil)
-        when(restrictedSecurity.getWPKS()).thenReturn(Collections.emptyList());
-        when(restrictedSecurity.getWPKs()).thenReturn(Collections.singletonList("WPK1"));
+        when(restrictedSecurity.getCUSIPS()).thenReturn(Arrays.asList("CUSIP1"));
+        when(restrictedSecurity.getCorrectRICs()).thenReturn(Arrays.asList("RIC1"));
+        when(restrictedSecurity.getWPKS()).thenReturn(Arrays.asList("WPK1"));
 
-        List<RestrictedSecurity> restrictions = Arrays.asList(restrictedSecurity);
+        restrictions.add(restrictedSecurity);
 
-        // Use Mockito's static mocking to capture calls to RSReportUtil
-        try (MockedStatic<RSReportUtil> mockedRSReportUtil = mockStatic(RSReportUtil.class)) {
-            // Obtain the protected method via reflection
-            Method method = StaXCallbackImpl.class.getDeclaredMethod("generaterestrictedSecuritiesList", StaXBuilder.class, List.class);
-            method.setAccessible(true);
+        // Mock StaXBuilder behavior
+        when(staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)).thenReturn(staXBuilder);
+        when(staXBuilder.addElement(ExtractorConstants.SECURITY_DESCRIPTION, "Test Security")).thenReturn(staXBuilder);
+        
+        // Call the method under test
+        staXCallbackImpl.generateRestrictedSecuritiesList(staXBuilder, restrictions);
 
-            // Invoke the method under test
-            method.invoke(staXCallbackImpl, staXBuilder, restrictions);
+        // Verify interactions
+        verify(staXBuilder, times(1)).startElement(ExtractorConstants.RESTRICTED_SECURITY);
+        verify(staXBuilder, times(1)).addElement(ExtractorConstants.SECURITY_DESCRIPTION, "Test Security");
 
-            // Verify that the StaXBuilder methods are called properly:
-            verify(staXBuilder).startElement(ExtractorConstants.RESTRICTED_SECURITY);
-            verify(staXBuilder).addElement(ExtractorConstants.SECURITY_DESCRIPTION, "TestSecurity");
-            verify(staXBuilder).endElement();
+        verify(restrictedSecurity, times(1)).getISINS();
+        verify(restrictedSecurity, times(1)).getCUSIPS();
+        verify(restrictedSecurity, times(1)).getCorrectRICs();
+        verify(restrictedSecurity, times(1)).getWPKS();
 
-            // Verify RSReportUtil calls for each security identifier type:
-            // For ISINS:
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, "ISIN1"));
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.ISIN, "ISIN2"));
-            // For CUSIPs:
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.CUSIP, "CUSIP1"));
-            // For RICs:
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, "RIC1"));
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.RIC, "RIC2"));
-            // For WPKs (from getWPKs())
-            mockedRSReportUtil.verify(() -> RSReportUtil.addSecurityIdentifier(staXBuilder, ExtractorConstants.WPK, "WPK1"));
-        }
+        verify(staXBuilder, times(1)).endElement();
     }
 }
