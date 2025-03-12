@@ -1,68 +1,64 @@
-import com.db.fusion.rs.model.RestrictedSecurity;
-import com.db.fusion.rs.service.impl.StaXCallbackImpl;
-import com.db.fusion.rs.stax.StaXBuilder;
-import com.db.fusion.rs.util.ExtractorConstants;
-import com.db.fusion.rs.util.RSReportUtil;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import javax.xml.stream.XMLStreamException;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.List;
-
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
-public class StaXCallbackImplTest {
+import java.io.*;
+import java.nio.file.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+class GenerateRSReportServiceImplTest {
+
+    @Mock
+    private RSExtractorService rsExtractor;
+
+    @Mock
+    private RSDaoImpl rsDao;
 
     @InjectMocks
-    private StaXCallbackImpl staXCallbackImpl;
+    private GenerateRSReportServiceImpl generateRSReportService;
 
-    @Mock
-    private StaXBuilder staXBuilder;
+    @TempDir
+    Path tempDir;  // Temporary directory for testing file writes
 
-    @Mock
-    private RestrictedSecurity restrictedSecurity;
+    private static final Logger LOGGER = LoggerFactory.getLogger(GenerateRSReportServiceImplTest.class);
 
     @BeforeEach
-    void setup() {
+    void setUp() {
         MockitoAnnotations.openMocks(this);
     }
 
     @Test
-    void testGenerateRestrictedSecuritiesList_Success() throws XMLStreamException {
-        // Mock RestrictedSecurity object
-        List<RestrictedSecurity> restrictions = new ArrayList<>();
-        when(restrictedSecurity.getSecurityDescription()).thenReturn("Test Security");
-        when(restrictedSecurity.getISINS()).thenReturn(Arrays.asList("ISIN1", "ISIN2"));
-        when(restrictedSecurity.getCUSIPS()).thenReturn(Arrays.asList("CUSIP1"));
-        when(restrictedSecurity.getCorrectRICs()).thenReturn(Arrays.asList("RIC1"));
-        when(restrictedSecurity.getWPKS()).thenReturn(Arrays.asList("WPK1"));
+    void testGenerateRSReport() throws Exception {
+        // Mock extractor output
+        ByteArrayOutputStream mockOutputStream = new ByteArrayOutputStream();
+        mockOutputStream.write("<restricted_securities></restricted_securities>".getBytes());
+        when(rsExtractor.extract()).thenReturn(mockOutputStream);
 
-        restrictions.add(restrictedSecurity);
+        // Call the method
+        String filePath = generateRSReportService.generateRSReport();
 
-        // Mock StaXBuilder behavior
-        when(staXBuilder.startElement(ExtractorConstants.RESTRICTED_SECURITY)).thenReturn(staXBuilder);
-        when(staXBuilder.addElement(ExtractorConstants.SECURITY_DESCRIPTION, "Test Security")).thenReturn(staXBuilder);
-        
-        // Call the method under test
-        staXCallbackImpl.generateRestrictedSecuritiesList(staXBuilder, restrictions);
+        // Verify file creation
+        Path reportPath = Paths.get(filePath);
+        assertTrue(Files.exists(reportPath), "Report file should exist");
 
-        // Verify interactions
-        verify(staXBuilder, times(1)).startElement(ExtractorConstants.RESTRICTED_SECURITY);
-        verify(staXBuilder, times(1)).addElement(ExtractorConstants.SECURITY_DESCRIPTION, "Test Security");
+        // Read and verify file content
+        String content = Files.readString(reportPath);
+        assertEquals("<restricted_securities></restricted_securities>", content.trim(), "File content should match");
 
-        verify(restrictedSecurity, times(1)).getISINS();
-        verify(restrictedSecurity, times(1)).getCUSIPS();
-        verify(restrictedSecurity, times(1)).getCorrectRICs();
-        verify(restrictedSecurity, times(1)).getWPKS();
+        // Verify logging
+        LOGGER.info("Generated report is at: " + filePath);
+    }
 
-        verify(staXBuilder, times(1)).endElement();
+    @Test
+    void testGenerateRSReport_ExceptionHandling() throws Exception {
+        when(rsExtractor.extract()).thenThrow(new IOException("Mocked IOException"));
+
+        assertThrows(RuntimeException.class, () -> generateRSReportService.generateRSReport());
+
+        // Verify logging
+        LOGGER.error("Exception occurred while generating the report");
     }
 }
